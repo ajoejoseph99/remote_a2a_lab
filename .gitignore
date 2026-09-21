@@ -1,0 +1,25 @@
+# Python bytecode and virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Environment files with sensitive credentials
+.env
+.env.local
+
+# ADK and testing artifacts
+.adk/
+.pytest_cache/
+*.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

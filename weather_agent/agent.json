@@ -1,0 +1,33 @@
+{
+  "name": "weather_agent",
+  "description": "Specialist agent that provides current weather forecasts, temperature, and precipitation conditions for any city.",
+  "version": "1.0.0",
+  "url": "http://localhost:8080",
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "capabilities": {
+    "streaming": true
+  },
+  "skills": [
+    {
+      "id": "get_current_weather",
+      "name": "Get Current Weather",
+      "description": "Retrieves temperature in Fahrenheit, conditions, humidity, and precipitation percentage for a specified location.",
+      "tags": [
+        "weather",
+        "forecast",
+        "precipitation"
+      ],
+      "examples": [
+        "What is the weather in Seattle, WA?",
+        "Check weather in London, UK",
+        "Is it raining in Phoenix, AZ?"
+      ]
+    }
+  ]
+}
