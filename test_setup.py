@@ -97,32 +97,31 @@ def run_tests():
         return False
 
     # ----------------------------------------------------
-    # Test 6: Root Agent (Travel Concierge) Handling Both Agents as AgentTools
+    # Test 6: Root Agent (Travel Concierge) Handling Both Agents Sequentially
     # ----------------------------------------------------
-    print("\n[TEST 6] Testing Root Agent (Travel Concierge) Coordinating Both Agents as Tools...")
+    print("\n[TEST 6] Testing Root Agent (Travel Concierge) Coordinating Both Agents Sequentially...")
     try:
         from travel_concierge.agent import root_agent as concierge_root
         from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
-        from google.adk.tools import AgentTool
+        from google.adk.agents.sequential_agent import SequentialAgent
 
         assert concierge_root.name == "travel_concierge"
-        assert len(concierge_root.tools) == 2
+        assert isinstance(concierge_root, SequentialAgent)
+        assert len(concierge_root.sub_agents) == 2
 
-        tool_names = [t.name for t in concierge_root.tools]
-        assert "weather_agent" in tool_names, "weather_agent missing from tools"
-        assert "itinerary_planner" in tool_names, "itinerary_planner missing from tools"
+        sub_agent_names = [s.name for s in concierge_root.sub_agents]
+        assert sub_agent_names == ["weather_agent", "itinerary_planner"]
 
-        weather_tool = next(t for t in concierge_root.tools if t.name == "weather_agent")
-        assert isinstance(weather_tool, AgentTool), "weather_agent tool is not an AgentTool"
-        assert isinstance(weather_tool.agent, RemoteA2aAgent), "weather_agent tool's agent is not a RemoteA2aAgent"
+        remote_agent = concierge_root.sub_agents[0]
+        assert isinstance(remote_agent, RemoteA2aAgent)
 
-        planner_tool = next(t for t in concierge_root.tools if t.name == "itinerary_planner")
-        assert isinstance(planner_tool, AgentTool), "itinerary_planner tool is not an AgentTool"
+        planner_agent = concierge_root.sub_agents[1]
+        assert planner_agent.name == "itinerary_planner"
 
         print(f"  ✓ Root Agent loaded successfully: name='{concierge_root.name}'.")
-        print(f"  ✓ Specialist agents coordinated as tools: {tool_names}.")
-        print("  ✓ Weather agent correctly configured as RemoteA2aAgent proxy via AgentTool.")
-        print("  ✓ Itinerary planner correctly configured as local specialist via AgentTool.")
+        print(f"  ✓ Sequential sub-agents coordinated: {sub_agent_names}.")
+        print("  ✓ Weather agent correctly configured as first sub-agent (RemoteA2aAgent proxy).")
+        print("  ✓ Itinerary planner correctly configured as second sub-agent.")
     except Exception as e:
         print(f"  ✗ Failed testing Root Agent: {e}")
         return False
