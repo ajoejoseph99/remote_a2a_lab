@@ -100,7 +100,7 @@ a2a-codelab/
 ├── Dockerfile              # Container specification for Google Cloud Run deployment
 ├── Procfile                # Cloud Run / Buildpacks process entrypoint
 ├── requirements.txt        # Single root dependencies file for ADK and all agents
-├── setup_env.sh            # Automated zero-copy-paste environment configuration script
+├── setup_env.sh            # Automated zero-copy-paste environment configuration & API enablement script
 ├── test_setup.py           # Verification test suite for all agents and A2A endpoints
 ├── weather_agent/          # Remote A2A Specialist Agent (deployed to Cloud Run)
 │   ├── agent.py            # Weather specialist powered by Google Search Grounding
@@ -146,7 +146,7 @@ pip install -r requirements.txt
 
 ---
 
-### 2.4 Configure Environment Variables & Vertex AI (Zero Copy-Paste)
+### 2.4 Configure Environment Variables & Enable Google Cloud APIs (Zero Copy-Paste)
 
 Authenticate your local terminal with Google Cloud Application Default Credentials (ADC):
 
@@ -154,7 +154,7 @@ Authenticate your local terminal with Google Cloud Application Default Credentia
 gcloud auth application-default login
 ```
 
-Create an automated configuration script `setup_env.sh` that pulls your active GCP project and default region directly from your `gcloud` terminal session—**no manual copy-pasting required**:
+Create an automated configuration script `setup_env.sh` that pulls your active GCP project and default region directly from your `gcloud` terminal session, generates `.env`, and enables all required Google Cloud APIs—**no manual copy-pasting required**:
 
 ```bash
 cat <<'EOF' > setup_env.sh
@@ -181,29 +181,25 @@ GOOGLE_CLOUD_LOCATION=global
 INNER_EOF
 
 echo "✅ Successfully configured .env automatically from terminal:"
-echo "   • GOOGLE_CLOUD_PROJECT  = ${PROJECT_ID}"
-echo "   • GOOGLE_CLOUD_LOCATION = global"
+echo "   • GOOGLE_CLOUD_PROJECT      = ${PROJECT_ID}"
+echo "   • GOOGLE_CLOUD_LOCATION     = global"
 echo "   • GOOGLE_GENAI_USE_VERTEXAI = TRUE"
+
+echo ""
+echo "🚀 Enabling required Google Cloud APIs (Cloud Run, Artifact Registry, Cloud Build, Vertex AI)..."
+gcloud services enable run.googleapis.com \
+    artifactregistry.googleapis.com \
+    cloudbuild.googleapis.com \
+    aiplatform.googleapis.com
+
+echo "✅ Google Cloud APIs enabled successfully."
 EOF
 
 chmod +x setup_env.sh
 ./setup_env.sh
 ```
 
-Next, enable the required Google Cloud APIs for Cloud Run and Vertex AI:
-
-```bash
-export PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
-export REGION=$(gcloud config get-value compute/region 2>/dev/null || echo "us-central1")
-export REGION=${REGION:-us-central1}
-
-gcloud services enable run.googleapis.com \
-    artifactregistry.googleapis.com \
-    cloudbuild.googleapis.com \
-    aiplatform.googleapis.com
-```
-
-> **Zero Copy-Paste Advantage:** You do not need to look up or manually edit project IDs or region strings in `.env`. The values are read dynamically from your active `gcloud` terminal configuration!
+> **Zero Copy-Paste Advantage:** You do not need to look up or manually edit project IDs, region strings, or enable APIs individually. Everything is handled dynamically and automatically in a single execution of `./setup_env.sh`!
 
 ---
 

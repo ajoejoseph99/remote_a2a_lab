@@ -25,3 +25,12 @@ echo "✅ Successfully configured .env automatically from terminal:"
 echo "   • GOOGLE_CLOUD_PROJECT      = ${PROJECT_ID}"
 echo "   • GOOGLE_CLOUD_LOCATION     = global"
 echo "   • GOOGLE_GENAI_USE_VERTEXAI = TRUE"
+
+echo ""
+echo "🚀 Enabling required Google Cloud APIs (Cloud Run, Artifact Registry, Cloud Build, Vertex AI)..."
+gcloud services enable run.googleapis.com \
+    artifactregistry.googleapis.com \
+    cloudbuild.googleapis.com \
+    aiplatform.googleapis.com
+
+echo "✅ Google Cloud APIs enabled successfully."
