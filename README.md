@@ -33,8 +33,7 @@ gcloud auth application-default login
 
 # Enable required Google Cloud services
 export PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
-export REGION=$(gcloud config get-value compute/region 2>/dev/null || echo "us-central1")
-export REGION=${REGION:-us-central1}
+export LOCATION="global"
 
 gcloud services enable run.googleapis.com \
     artifactregistry.googleapis.com \
@@ -52,6 +51,9 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --role="roles/aiplatform.user"
 
 # Deploy to Cloud Run using terminal variables directly
+export REGION=$(gcloud config get-value compute/region 2>/dev/null || echo "us-central1")
+export REGION=${REGION:-us-central1}
+
 gcloud run deploy weather-agent \
     --source . \
     --region "$REGION" \

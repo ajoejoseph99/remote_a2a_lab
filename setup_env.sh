@@ -10,18 +10,17 @@ if [ -z "$PROJECT_ID" ]; then
   exit 1
 fi
 
-# Automatically query or default compute region
-REGION=$(gcloud config get-value compute/region 2>/dev/null)
-REGION=${REGION:-us-central1}
+# Set Vertex AI Model Location to global (required for Gemini 3.8 Flash)
+LOCATION="global"
 
 # Generate .env automatically with zero manual copy-pasting
 cat <<EOF > .env
 GOOGLE_GENAI_USE_VERTEXAI=TRUE
 GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
-GOOGLE_CLOUD_LOCATION=global
+GOOGLE_CLOUD_LOCATION=${LOCATION}
 EOF
 
 echo "✅ Successfully configured .env automatically from terminal:"
 echo "   • GOOGLE_CLOUD_PROJECT      = ${PROJECT_ID}"
-echo "   • GOOGLE_CLOUD_LOCATION     = global"
+echo "   • GOOGLE_CLOUD_LOCATION     = ${LOCATION}"
 echo "   • GOOGLE_GENAI_USE_VERTEXAI = TRUE"

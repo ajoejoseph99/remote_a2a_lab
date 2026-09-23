@@ -161,7 +161,7 @@ cat <<'EOF' > setup_env.sh
 #!/usr/bin/env bash
 set -e
 
-# Query active Google Cloud project and region dynamically from terminal
+# Query active Google Cloud project dynamically from terminal
 PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
 if [ -z "$PROJECT_ID" ]; then
   echo "❌ Error: No active Google Cloud project found in gcloud config."
@@ -170,19 +170,19 @@ if [ -z "$PROJECT_ID" ]; then
   exit 1
 fi
 
-REGION=$(gcloud config get-value compute/region 2>/dev/null)
-REGION=${REGION:-us-central1}
+# Set Vertex AI Model Location to global (required for Gemini 3.8 Flash)
+LOCATION="global"
 
 # Generate .env automatically with zero manual copy-pasting
 cat <<INNER_EOF > .env
 GOOGLE_GENAI_USE_VERTEXAI=TRUE
 GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
-GOOGLE_CLOUD_LOCATION=global
+GOOGLE_CLOUD_LOCATION=${LOCATION}
 INNER_EOF
 
 echo "✅ Successfully configured .env automatically from terminal:"
 echo "   • GOOGLE_CLOUD_PROJECT      = ${PROJECT_ID}"
-echo "   • GOOGLE_CLOUD_LOCATION     = global"
+echo "   • GOOGLE_CLOUD_LOCATION     = ${LOCATION}"
 echo "   • GOOGLE_GENAI_USE_VERTEXAI = TRUE"
 EOF
 
@@ -194,8 +194,7 @@ Next, enable the required Google Cloud APIs for Cloud Run and Vertex AI:
 
 ```bash
 export PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
-export REGION=$(gcloud config get-value compute/region 2>/dev/null || echo "us-central1")
-export REGION=${REGION:-us-central1}
+export LOCATION="global"
 
 gcloud services enable run.googleapis.com \
     artifactregistry.googleapis.com \
@@ -203,7 +202,7 @@ gcloud services enable run.googleapis.com \
     aiplatform.googleapis.com
 ```
 
-> **Zero Copy-Paste Advantage:** You do not need to look up or manually edit project IDs or region strings in `.env`. The values are read dynamically from your active `gcloud` terminal configuration!
+> **Zero Copy-Paste Advantage:** You do not need to look up or manually edit project IDs or location strings in `.env`. The values are read dynamically from your active `gcloud` terminal configuration with Vertex AI configured globally!
 
 ---
 
@@ -505,9 +504,12 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
     --role="roles/aiplatform.user"
 ```
 
-Deploy the Weather Agent container to Cloud Run with Vertex AI configured:
+Deploy the Weather Agent container to Cloud Run with Vertex AI configured (Cloud Run deploys to your compute region, while Vertex AI model calls route globally):
 
 ```bash
+export REGION=$(gcloud config get-value compute/region 2>/dev/null || echo "us-central1")
+export REGION=${REGION:-us-central1}
+
 gcloud run deploy weather-agent \
     --source . \
     --region $REGION \
