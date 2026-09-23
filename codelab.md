@@ -341,8 +341,9 @@ if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
         except Exception:
             pass
 
-os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "TRUE")
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
+# Ensure Gemini 3.8 Flash uses the global publisher endpoint on Vertex AI
+os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "TRUE"
+os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
 
 # Determine port from Cloud Run environment (defaults to 8080)
 port = int(os.environ.get("PORT", "8080"))
@@ -528,6 +529,8 @@ export WEATHER_AGENT_URL=$(gcloud run services describe weather-agent \
     --region $REGION \
     --format 'value(status.url)')
 
+# Cleanly update WEATHER_AGENT_URL in .env (removes any previous entries)
+grep -v "^WEATHER_AGENT_URL=" .env > .env.tmp 2>/dev/null && mv .env.tmp .env || true
 echo "WEATHER_AGENT_URL=${WEATHER_AGENT_URL}" >> .env
 echo "Weather Agent running at: $WEATHER_AGENT_URL"
 ```
@@ -619,15 +622,14 @@ if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
         except Exception:
             pass
 
-os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "TRUE")
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
+# Ensure Gemini 3.8 Flash uses the global publisher endpoint on Vertex AI
+os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "TRUE"
+os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
 
 
 def resolve_weather_agent_url() -> str:
-    """Resolves Weather Agent A2A endpoint: env var -> gcloud describe -> localhost."""
-    url = os.environ.get("WEATHER_AGENT_URL")
-    if url:
-        return url.rstrip("/")
+    """Resolves Weather Agent A2A endpoint: live gcloud describe -> env var -> localhost."""
+    # 1. Prefer live Cloud Run service URL directly from gcloud if deployed
     # Automatically query gcloud from the terminal environment if deployed
     try:
         region = os.environ.get("CLOUD_RUN_REGION")
@@ -644,10 +646,17 @@ def resolve_weather_agent_url() -> str:
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
-        if discovered:
+        if discovered and discovered.startswith("http"):
             return discovered.rstrip("/")
     except Exception:
         pass
+
+    # 2. Fall back to WEATHER_AGENT_URL from environment
+    url = os.environ.get("WEATHER_AGENT_URL")
+    if url and url.startswith("http"):
+        return url.rstrip("/")
+
+    # 3. Default to local development server
     return "http://localhost:8080"
 
 

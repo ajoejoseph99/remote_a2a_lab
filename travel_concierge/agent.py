@@ -32,16 +32,14 @@ if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
         except Exception:
             pass
 
-os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "TRUE")
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
+# Ensure Gemini 3.8 Flash uses the global publisher endpoint on Vertex AI
+os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "TRUE"
+os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
 
 
 def resolve_weather_agent_url() -> str:
-    """Resolves Weather Agent A2A endpoint: env var -> gcloud describe -> localhost."""
-    url = os.environ.get("WEATHER_AGENT_URL")
-    if url:
-        return url.rstrip("/")
-    # Automatically query gcloud from the terminal environment if deployed
+    """Resolves Weather Agent A2A endpoint: live gcloud describe -> env var -> localhost."""
+    # 1. Prefer live Cloud Run service URL directly from gcloud if deployed
     try:
         region = os.environ.get("CLOUD_RUN_REGION")
         if not region:
@@ -49,19 +47,26 @@ def resolve_weather_agent_url() -> str:
                 ["gcloud", "config", "get-value", "compute/region"],
                 stderr=subprocess.DEVNULL,
                 text=True,
-                timeout=2,
+                timeout=3,
             ).strip()
         region = region or "us-central1"
         discovered = subprocess.check_output(
             ["gcloud", "run", "services", "describe", "weather-agent", "--region", region, "--format", "value(status.url)"],
             stderr=subprocess.DEVNULL,
             text=True,
-            timeout=2,
+            timeout=3,
         ).strip()
-        if discovered:
+        if discovered and discovered.startswith("http"):
             return discovered.rstrip("/")
     except Exception:
         pass
+
+    # 2. Fall back to WEATHER_AGENT_URL from environment
+    url = os.environ.get("WEATHER_AGENT_URL")
+    if url and url.startswith("http"):
+        return url.rstrip("/")
+
+    # 3. Default to local development server
     return "http://localhost:8080"
 
 

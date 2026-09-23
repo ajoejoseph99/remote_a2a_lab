@@ -32,8 +32,9 @@ if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
         except Exception:
             pass
 
-os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "TRUE")
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
+# Ensure Gemini 3.8 Flash uses the global publisher endpoint on Vertex AI
+os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "TRUE"
+os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
 
 # Determine port from Cloud Run environment (defaults to 8080)
 port = int(os.environ.get("PORT", "8080"))
