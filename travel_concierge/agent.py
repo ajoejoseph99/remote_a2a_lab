@@ -5,6 +5,7 @@ import subprocess
 from dotenv import load_dotenv
 from google.adk.agents.llm_agent import Agent
 from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
+from google.adk.tools import AgentTool
 from itinerary_planner.agent import itinerary_planner
 
 # 1. Automatically load .env if present
@@ -84,17 +85,20 @@ remote_weather_agent = RemoteA2aAgent(
 ROOT_INSTRUCTIONS = """
 You are the Root Travel Concierge. You assist travelers by coordinating their trip preparations end-to-end.
 
-When a user asks about traveling to a city, planning a day out, or what they should wear/pack:
-1. First, delegate to your remote 'weather_agent' sub-agent to fetch the current weather and precipitation forecast for the destination.
-2. Second, pass the retrieved weather details to your 'itinerary_planner' sub-agent to generate clothing suggestions, footwear recommendations, and umbrella alerts.
-3. Finally, combine the findings into a clear, friendly, and complete travel summary for the user.
+When a user asks about traveling to a city, planning an outing, or asking what to wear or pack:
+1. First, call the 'weather_agent' tool to retrieve current live weather and precipitation forecast for the destination.
+2. Second, pass the retrieved weather details (temperature, sky condition, rain probability) to the 'itinerary_planner' tool to generate wardrobe advice, footwear recommendations, and umbrella alerts.
+3. Finally, combine the findings from both specialist tools into a clear, friendly, and complete travel summary for the user.
 """
 
-# 5. Define the Root Agent coordinating both sub-agents
+# 5. Define the Root Agent coordinating both specialist agents as callable tools
 root_agent = Agent(
     name="travel_concierge",
     model="gemini-3.8-flash",
     description="Root travel orchestrator that coordinates weather forecasting and attire planning across specialized agents.",
     instruction=ROOT_INSTRUCTIONS,
-    sub_agents=[remote_weather_agent, itinerary_planner],
+    tools=[
+        AgentTool(agent=remote_weather_agent),
+        AgentTool(agent=itinerary_planner),
+    ],
 )

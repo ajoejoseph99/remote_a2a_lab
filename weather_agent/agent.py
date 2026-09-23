@@ -16,7 +16,8 @@ root_agent = Agent(
         "2. Sky conditions (e.g. sunny, cloudy, rainy, drizzle). "
         "3. Precipitation probability (chance of rain/snow percentage). "
         "4. Humidity and wind speed. "
-        "Be concise and factual."
+        "Be concise, factual, and focused strictly on the weather forecast. "
+        "Do not provide clothing, packing, or wardrobe suggestions; focus solely on the weather report."
     ),
     tools=[google_search],
 )

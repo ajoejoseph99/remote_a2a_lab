@@ -237,7 +237,8 @@ root_agent = Agent(
         "2. Sky conditions (e.g. sunny, cloudy, rainy, drizzle). "
         "3. Precipitation probability (chance of rain/snow percentage). "
         "4. Humidity and wind speed. "
-        "Be concise and factual."
+        "Be concise, factual, and focused strictly on the weather forecast. "
+        "Do not provide clothing, packing, or wardrobe suggestions; focus solely on the weather report."
     ),
     tools=[google_search],
 )
@@ -629,6 +630,7 @@ import subprocess
 from dotenv import load_dotenv
 from google.adk.agents.llm_agent import Agent
 from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
+from google.adk.tools import AgentTool
 from itinerary_planner.agent import itinerary_planner
 
 # 1. Automatically load .env if present
@@ -707,33 +709,44 @@ remote_weather_agent = RemoteA2aAgent(
 ROOT_INSTRUCTIONS = """
 You are the Root Travel Concierge. You assist travelers by coordinating their trip preparations end-to-end.
 
-When a user asks about traveling to a city, planning a day out, or what they should wear/pack:
-1. First, delegate to your remote 'weather_agent' sub-agent to fetch the current weather and precipitation forecast for the destination.
-2. Second, pass the retrieved weather details to your 'itinerary_planner' sub-agent to generate clothing suggestions, footwear recommendations, and umbrella alerts.
-3. Finally, combine the findings into a clear, friendly, and complete travel summary for the user.
+When a user asks about traveling to a city, planning an outing, or asking what to wear or pack:
+1. First, call the 'weather_agent' tool to retrieve current live weather and precipitation forecast for the destination.
+2. Second, pass the retrieved weather details (temperature, sky condition, rain probability) to the 'itinerary_planner' tool to generate wardrobe advice, footwear recommendations, and umbrella alerts.
+3. Finally, combine the findings from both specialist tools into a clear, friendly, and complete travel summary for the user.
 """
 
-# 5. Define the Root Agent coordinating both sub-agents
+# 5. Define the Root Agent coordinating both specialist agents as callable tools
 root_agent = Agent(
     name="travel_concierge",
     model="gemini-3.8-flash",
     description="Root travel orchestrator that coordinates weather forecasting and attire planning across specialized agents.",
     instruction=ROOT_INSTRUCTIONS,
-    sub_agents=[remote_weather_agent, itinerary_planner],
+    tools=[
+        AgentTool(agent=remote_weather_agent),
+        AgentTool(agent=itinerary_planner),
+    ],
 )
 ```
 
 ---
 
-### How the Root Agent Works
+### How the Root Agent Works: Supervisor vs. Handoff
 
-Notice how cleanly ADK enables multi-agent composition:
-1. **Federated Topology**: The root agent treats the remote `weather_agent` (running on Google Cloud Run) identically to the local `itinerary_planner` agent.
-2. **Automated Discovery**: `RemoteA2aAgent` parses the remote `agent-card.json` and exposes the `get_current_weather` skill schema to Gemini.
-3. **Multi-Hop Collaboration**: Gemini in the Root Agent autonomously breaks down the user's travel query:
-   - Step A: Invokes `weather_agent` via A2A JSON-RPC over the public network.
-   - Step B: Takes the weather result and hands it to `itinerary_planner`.
-   - Step C: Returns the final styled recommendation to the user.
+In Google ADK, there are two distinct multi-agent paradigms:
+
+1. **Conversational Handoff (`sub_agents=[...]`)**:
+   - The Root Agent hands over conversational control to a sub-agent (`transfer_to_agent`).
+   - The sub-agent now directly converses with the user until the session ends.
+   - However, because `weather_agent` runs on a remote Cloud Run container, it has no reference to `itinerary_planner` in its isolated runtime and cannot transfer back.
+
+2. **Supervisor / Coordinator Pattern (`tools=[AgentTool(...)]`)**:
+   - The Root Agent wraps specialized agents inside **`AgentTool`**.
+   - `travel_concierge` maintains full conversation control and invokes sub-agents as **functional tools / subroutines**.
+   - **Multi-Hop Sequential Pipeline**:
+     - **Step A**: Invokes `weather_agent` via A2A JSON-RPC over HTTPS to Cloud Run to fetch live, search-grounded weather.
+     - **Step B**: Feeds that weather report into the local `itinerary_planner` tool to calculate packing and umbrella requirements.
+     - **Step C**: Synthesizes both outputs into a unified travel briefing for the user.
+   - In the ADK Web UI, each `AgentTool` is visually rendered in the graph as a specialized agent node (`🤖 weather_agent`, `🤖 itinerary_planner`).
 
 ---
 
