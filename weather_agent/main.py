@@ -1,5 +1,6 @@
 """Entrypoint for serving the Weather Agent over the A2A protocol."""
 
+import json
 import os
 import subprocess
 from dotenv import load_dotenv
@@ -37,13 +38,38 @@ os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
 # Determine port from Cloud Run environment (defaults to 8080)
 port = int(os.environ.get("PORT", "8080"))
 
-# Locate explicit Agent Card (agent.json) if present
+# Locate explicit Agent Card (agent.json) and ensure required schema fields exist
 agent_card_path = os.path.join(os.path.dirname(__file__), "agent.json")
+
+
+def _load_agent_card():
+    """Safely loads agent.json ensuring all A2A specification required fields exist."""
+    if not os.path.exists(agent_card_path):
+        return None
+    try:
+        from a2a.types import AgentCard
+
+        with open(agent_card_path, "r") as f:
+            card_data = json.load(f)
+        # Ensure mandatory A2A schema fields are present
+        card_data.setdefault("url", f"http://localhost:{port}")
+        card_data.setdefault("defaultInputModes", ["text/plain"])
+        card_data.setdefault("defaultOutputModes", ["text/plain", "application/json"])
+        card_data.setdefault("capabilities", {"streaming": True})
+        if "skills" in card_data and isinstance(card_data["skills"], list):
+            for skill in card_data["skills"]:
+                if isinstance(skill, dict):
+                    skill.setdefault("tags", ["weather", "search-grounding"])
+        return AgentCard(**card_data)
+    except Exception:
+        # Fall back to automatic generation by ADK
+        return None
+
 
 # Convert the ADK agent to an A2A-compliant ASGI application
 app = to_a2a(
     root_agent,
-    agent_card=agent_card_path if os.path.exists(agent_card_path) else None,
+    agent_card=_load_agent_card(),
     port=port,
 )
 
