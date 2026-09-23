@@ -10,13 +10,13 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application files
-COPY . /app/weather_agent/
+# Copy all project files
+COPY . /app/
 
-# Set Python path to find weather_agent package
+# Set Python path
 ENV PYTHONPATH=/app
 
 EXPOSE 8080
 
-# Start the A2A server
+# Start the Weather Agent A2A server
 CMD ["python", "weather_agent/main.py"]

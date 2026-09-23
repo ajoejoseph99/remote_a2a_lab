@@ -419,14 +419,13 @@ fastapi>=0.110.0
 
 ---
 
-### 4.2 Create `weather_agent/Dockerfile`
+### 4.2 Create the `Dockerfile`
 
-Create `weather_agent/Dockerfile`:
+Create `Dockerfile` in your project root:
 
 ```dockerfile
 FROM python:3.11-slim
 
-# Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive \
     PORT=8080
@@ -434,19 +433,18 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Install dependencies
-COPY weather_agent/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application files
-COPY weather_agent/ /app/weather_agent/
+# Copy all project files
+COPY . /app/
 
-# Set Python path to find weather_agent package
+# Set Python path to find root and agent packages
 ENV PYTHONPATH=/app
 
-# Expose Cloud Run port
 EXPOSE 8080
 
-# Start the A2A server
+# Start the Weather Agent A2A server
 CMD ["python", "weather_agent/main.py"]
 ```
 
