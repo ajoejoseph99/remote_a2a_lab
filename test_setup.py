@@ -13,45 +13,33 @@ def run_tests():
     print("=" * 60)
 
     # ----------------------------------------------------
-    # Test 1: Weather Tool Execution (Google Weather API / Resilient Fallback)
+    # Test 1: Weather Agent ADK Definition & Google Search Grounding
     # ----------------------------------------------------
-    print("\n[TEST 1] Testing Weather Tool 'get_current_weather'...")
-    try:
-        from weather_agent.agent import get_current_weather
-        result_seattle = get_current_weather("Seattle, WA")
-        assert "Seattle" in result_seattle["location"]
-        assert "temperature_f" in result_seattle
-        assert isinstance(result_seattle["temperature_f"], (int, float))
-        assert "condition" in result_seattle
-        assert "precipitation_chance" in result_seattle
-        assert isinstance(result_seattle["precipitation_chance"], int)
-        assert "humidity" in result_seattle
-        assert "wind_mph" in result_seattle
-        assert "source" in result_seattle
-
-        result_phoenix = get_current_weather("Phoenix, AZ")
-        assert "Phoenix" in result_phoenix["location"]
-        assert "temperature_f" in result_phoenix
-        assert "condition" in result_phoenix
-
-        print(f"  ✓ Weather tool returned valid structure:")
-        print(f"    - Seattle: {result_seattle['temperature_f']}°F, {result_seattle['condition']}, Precip: {result_seattle['precipitation_chance']}% (Source: {result_seattle['source']})")
-        print(f"    - Phoenix: {result_phoenix['temperature_f']}°F, {result_phoenix['condition']}, Precip: {result_phoenix['precipitation_chance']}% (Source: {result_phoenix['source']})")
-    except Exception as e:
-        print(f"  ✗ Failed testing weather tool: {e}")
-        return False
-
-    # ----------------------------------------------------
-    # Test 2: Weather Agent ADK Definition
-    # ----------------------------------------------------
-    print("\n[TEST 2] Testing Weather Agent ADK Definition...")
+    print("\n[TEST 1] Testing Weather Agent Definition & Google Search Grounding...")
     try:
         from weather_agent.agent import root_agent
         assert root_agent.name == "weather_agent"
+        assert root_agent.model == "gemini-3.8-flash"
         assert len(root_agent.tools) == 1
+        assert root_agent.tools[0].name == "google_search"
         print(f"  ✓ Weather agent loaded successfully: name='{root_agent.name}', model='{root_agent.model}'.")
+        print(f"  ✓ Google Search Grounding tool configured: {[t.name for t in root_agent.tools]}.")
     except Exception as e:
         print(f"  ✗ Failed loading Weather Agent: {e}")
+        return False
+
+    # ----------------------------------------------------
+    # Test 2: Weather Agent Prompt Rules & Output Specs
+    # ----------------------------------------------------
+    print("\n[TEST 2] Testing Weather Agent Prompt Instructions...")
+    try:
+        instruction = root_agent.instruction.lower()
+        assert "temperature" in instruction
+        assert "precipitation" in instruction
+        assert "google_search" in instruction
+        print("  ✓ Weather agent instructions include temperature, precipitation, and search grounding.")
+    except Exception as e:
+        print(f"  ✗ Failed validating weather agent instructions: {e}")
         return False
 
     # ----------------------------------------------------

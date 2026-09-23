@@ -19,8 +19,6 @@ cat <<EOF > .env
 GOOGLE_GENAI_USE_VERTEXAI=TRUE
 GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
 GOOGLE_CLOUD_LOCATION=${REGION}
-# Optional: Set GOOGLE_WEATHER_API_KEY if using an explicit Google Maps API Key;
-# otherwise, Application Default Credentials (ADC) OAuth2 tokens are used automatically.
 EOF
 
 echo "✅ Successfully configured .env automatically from terminal:"

@@ -17,11 +17,12 @@
     {
       "id": "get_current_weather",
       "name": "Get Current Weather",
-      "description": "Retrieves temperature in Fahrenheit, conditions, humidity, and precipitation percentage for a specified location.",
+      "description": "Retrieves temperature, conditions, humidity, and precipitation percentage for any location using Google Search Grounding.",
       "tags": [
         "weather",
         "forecast",
-        "precipitation"
+        "precipitation",
+        "search-grounding"
       ],
       "examples": [
         "What is the weather in Seattle, WA?",
