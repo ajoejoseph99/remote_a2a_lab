@@ -28,8 +28,18 @@ pip install -r requirements.txt
 # Authenticate with Google Cloud Vertex AI
 gcloud auth application-default login
 
-# Automatically configure .env and enable required Google Cloud APIs
+# Automatically configure .env directly from your terminal session
 ./setup_env.sh
+
+# Enable required Google Cloud services
+export PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+export REGION=$(gcloud config get-value compute/region 2>/dev/null || echo "us-central1")
+export REGION=${REGION:-us-central1}
+
+gcloud services enable run.googleapis.com \
+    artifactregistry.googleapis.com \
+    cloudbuild.googleapis.com \
+    aiplatform.googleapis.com
 ```
 
 ### 2. Deploy Weather Agent to Google Cloud Run (Public/Unauthenticated)
