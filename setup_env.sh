@@ -18,10 +18,10 @@ REGION=${REGION:-us-central1}
 cat <<EOF > .env
 GOOGLE_GENAI_USE_VERTEXAI=TRUE
 GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
-GOOGLE_CLOUD_LOCATION=${REGION}
+GOOGLE_CLOUD_LOCATION=global
 EOF
 
 echo "✅ Successfully configured .env automatically from terminal:"
 echo "   • GOOGLE_CLOUD_PROJECT      = ${PROJECT_ID}"
-echo "   • GOOGLE_CLOUD_LOCATION     = ${REGION}"
+echo "   • GOOGLE_CLOUD_LOCATION     = global"
 echo "   • GOOGLE_GENAI_USE_VERTEXAI = TRUE"

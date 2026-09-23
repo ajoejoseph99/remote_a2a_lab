@@ -33,7 +33,7 @@ if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
             pass
 
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "TRUE")
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
+os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 
 
 def resolve_weather_agent_url() -> str:
@@ -43,7 +43,15 @@ def resolve_weather_agent_url() -> str:
         return url.rstrip("/")
     # Automatically query gcloud from the terminal environment if deployed
     try:
-        region = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        region = os.environ.get("CLOUD_RUN_REGION")
+        if not region:
+            region = subprocess.check_output(
+                ["gcloud", "config", "get-value", "compute/region"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=2,
+            ).strip()
+        region = region or "us-central1"
         discovered = subprocess.check_output(
             ["gcloud", "run", "services", "describe", "weather-agent", "--region", region, "--format", "value(status.url)"],
             stderr=subprocess.DEVNULL,

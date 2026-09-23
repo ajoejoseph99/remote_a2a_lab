@@ -177,12 +177,12 @@ REGION=${REGION:-us-central1}
 cat <<INNER_EOF > .env
 GOOGLE_GENAI_USE_VERTEXAI=TRUE
 GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
-GOOGLE_CLOUD_LOCATION=${REGION}
+GOOGLE_CLOUD_LOCATION=global
 INNER_EOF
 
 echo "✅ Successfully configured .env automatically from terminal:"
 echo "   • GOOGLE_CLOUD_PROJECT  = ${PROJECT_ID}"
-echo "   • GOOGLE_CLOUD_LOCATION = ${REGION}"
+echo "   • GOOGLE_CLOUD_LOCATION = global"
 echo "   • GOOGLE_GENAI_USE_VERTEXAI = TRUE"
 EOF
 
@@ -342,7 +342,7 @@ if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
             pass
 
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "TRUE")
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
+os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 
 # Determine port from Cloud Run environment (defaults to 8080)
 port = int(os.environ.get("PORT", "8080"))
@@ -512,7 +512,7 @@ gcloud run deploy weather-agent \
     --region $REGION \
     --platform managed \
     --allow-unauthenticated \
-    --set-env-vars GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION
+    --set-env-vars GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=global
 ```
 
 > **Simplicity Note:** In this introductory codelab, we deploy with `--allow-unauthenticated` so that anyone can reach the remote A2A endpoint over HTTPS without needing complex IAM service account credentials.
@@ -620,7 +620,7 @@ if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
             pass
 
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "TRUE")
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
+os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 
 
 def resolve_weather_agent_url() -> str:
@@ -630,7 +630,15 @@ def resolve_weather_agent_url() -> str:
         return url.rstrip("/")
     # Automatically query gcloud from the terminal environment if deployed
     try:
-        region = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        region = os.environ.get("CLOUD_RUN_REGION")
+        if not region:
+            region = subprocess.check_output(
+                ["gcloud", "config", "get-value", "compute/region"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=2,
+            ).strip()
+        region = region or "us-central1"
         discovered = subprocess.check_output(
             ["gcloud", "run", "services", "describe", "weather-agent", "--region", region, "--format", "value(status.url)"],
             stderr=subprocess.DEVNULL,

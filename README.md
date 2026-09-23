@@ -56,7 +56,7 @@ gcloud run deploy weather-agent \
     --source . \
     --region "$REGION" \
     --allow-unauthenticated \
-    --set-env-vars GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT="$PROJECT_ID",GOOGLE_CLOUD_LOCATION="$REGION"
+    --set-env-vars GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT="$PROJECT_ID",GOOGLE_CLOUD_LOCATION=global
 
 # Automatically write the deployed Cloud Run URL into .env (no copy-pasting required)
 echo "WEATHER_AGENT_URL=$(gcloud run services describe weather-agent --region "$REGION" --format='value(status.url)')" >> .env

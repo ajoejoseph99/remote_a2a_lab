@@ -33,7 +33,7 @@ if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
             pass
 
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "TRUE")
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
+os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
 
 # Determine port from Cloud Run environment (defaults to 8080)
 port = int(os.environ.get("PORT", "8080"))
