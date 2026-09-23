@@ -93,6 +93,7 @@ cd a2a-codelab
 Your project directory will look like this:
 ```
 a2a-codelab/
+├── setup_env.sh            # Automated configuration script
 ├── weather_agent/
 │   ├── agent.py
 │   ├── agent.json
@@ -103,7 +104,7 @@ a2a-codelab/
 │   └── agent.py
 ├── travel_concierge/
 │   └── agent.py
-└── .env
+└── .env                    # Auto-generated (not committed)
 ```
 
 ---
@@ -122,43 +123,69 @@ source .venv/bin/activate
 Install the `google-adk` package with the `a2a` extras and server dependencies:
 
 ```bash
-pip install --upgrade "google-adk[a2a]" uvicorn fastapi
+pip install --upgrade "google-adk[a2a]" "a2a-sdk[http-server]>=0.3.20,<0.4.0" uvicorn fastapi python-dotenv
 ```
 
 ---
 
-### 2.4 Configure Environment Variables & Vertex AI
+### 2.4 Configure Environment Variables & Vertex AI (Zero Copy-Paste)
 
-Authenticate your local environment with Google Cloud Application Default Credentials (ADC):
+Authenticate your local terminal with Google Cloud Application Default Credentials (ADC):
 
 ```bash
 gcloud auth application-default login
 ```
 
-Configure your Google Cloud project and region:
+Create an automated configuration script `setup_env.sh` that pulls your active GCP project and default region directly from your `gcloud` terminal session—**no manual copy-pasting required**:
 
 ```bash
-export PROJECT_ID=$(gcloud config get-value project)
-export REGION="us-central1"
+cat <<'EOF' > setup_env.sh
+#!/usr/bin/env bash
+set -e
 
-# Enable required Google Cloud services including Vertex AI
+# Query active Google Cloud project and region dynamically from terminal
+PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+if [ -z "$PROJECT_ID" ]; then
+  echo "❌ Error: No active Google Cloud project found in gcloud config."
+  echo "   Please authenticate first: gcloud auth login"
+  echo "   Then set your project:     gcloud config set project <PROJECT_ID>"
+  exit 1
+fi
+
+REGION=$(gcloud config get-value compute/region 2>/dev/null)
+REGION=${REGION:-us-central1}
+
+# Generate .env automatically with zero manual copy-pasting
+cat <<INNER_EOF > .env
+GOOGLE_GENAI_USE_VERTEXAI=TRUE
+GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
+GOOGLE_CLOUD_LOCATION=${REGION}
+INNER_EOF
+
+echo "✅ Successfully configured .env automatically from terminal:"
+echo "   • GOOGLE_CLOUD_PROJECT  = ${PROJECT_ID}"
+echo "   • GOOGLE_CLOUD_LOCATION = ${REGION}"
+echo "   • GOOGLE_GENAI_USE_VERTEXAI = TRUE"
+EOF
+
+chmod +x setup_env.sh
+./setup_env.sh
+```
+
+Next, enable the required Google Cloud APIs for Cloud Run and Vertex AI:
+
+```bash
+export PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+export REGION=$(gcloud config get-value compute/region 2>/dev/null || echo "us-central1")
+export REGION=${REGION:-us-central1}
+
 gcloud services enable run.googleapis.com \
     artifactregistry.googleapis.com \
     cloudbuild.googleapis.com \
     aiplatform.googleapis.com
 ```
 
-Create a root `.env` file configured to use **Vertex AI**:
-
-```bash
-cat <<EOF > .env
-GOOGLE_GENAI_USE_VERTEXAI=TRUE
-GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
-GOOGLE_CLOUD_LOCATION=${REGION}
-EOF
-```
-
-> **Vertex AI Advantage:** Using Vertex AI allows your agents to authenticate via Google Cloud IAM and Application Default Credentials (ADC) without requiring static API keys.
+> **Zero Copy-Paste Advantage:** You do not need to look up or manually edit project IDs or region strings in `.env`. The values are read dynamically from your active `gcloud` terminal configuration!
 
 ---
 
@@ -430,13 +457,14 @@ gcloud run deploy weather-agent \
 
 ### 4.4 Verify the Deployed Cloud Run Service
 
-Once the deployment completes, `gcloud` will output the Service URL:
+Capture the deployed Service URL directly from `gcloud` and write it to `.env` automatically:
 
 ```bash
 export WEATHER_AGENT_URL=$(gcloud run services describe weather-agent \
     --region $REGION \
     --format 'value(status.url)')
 
+echo "WEATHER_AGENT_URL=${WEATHER_AGENT_URL}" >> .env
 echo "Weather Agent running at: $WEATHER_AGENT_URL"
 ```
 
@@ -489,20 +517,71 @@ Now, we create the **Root Agent (`travel_concierge`)** that acts as the primary 
 1. **`weather_agent` (Remote Sub-agent)**: Connected via `RemoteA2aAgent` pointing to our public Cloud Run A2A endpoint.
 2. **`itinerary_planner` (Local Sub-agent)**: Imported and registered directly as an in-process sub-agent.
 
+Notice how `travel_concierge` automatically resolves your project ID and Cloud Run URL from `.env` or directly from `gcloud`—**zero copy-pasting required**.
+
 Create `travel_concierge/agent.py`:
 
 ```python
 """Root Travel Concierge Agent coordinating Weather Agent (remote A2A) and Itinerary Planner."""
 
 import os
+import subprocess
+from dotenv import load_dotenv
 from google.adk.agents.llm_agent import Agent
 from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
 from itinerary_planner.agent import itinerary_planner
 
-# Retrieve remote Cloud Run A2A URL from environment variable or fallback to localhost
-CLOUD_RUN_URL = os.environ.get("WEATHER_AGENT_URL", "http://localhost:8080")
+# 1. Automatically load .env if present
+load_dotenv()
 
-# 1. Instantiate the Remote A2A Weather Agent Proxy
+# 2. Automatically discover GOOGLE_CLOUD_PROJECT from terminal/gcloud if missing
+if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
+    try:
+        import google.auth
+        _, project = google.auth.default()
+        if project:
+            os.environ["GOOGLE_CLOUD_PROJECT"] = project
+    except Exception:
+        pass
+    if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
+        try:
+            proj = subprocess.check_output(
+                ["gcloud", "config", "get-value", "project"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).strip()
+            if proj:
+                os.environ["GOOGLE_CLOUD_PROJECT"] = proj
+        except Exception:
+            pass
+
+os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "TRUE")
+os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
+
+
+def resolve_weather_agent_url() -> str:
+    """Resolves Weather Agent A2A endpoint: env var -> gcloud describe -> localhost."""
+    url = os.environ.get("WEATHER_AGENT_URL")
+    if url:
+        return url.rstrip("/")
+    # Automatically query gcloud from the terminal environment if deployed
+    try:
+        region = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        discovered = subprocess.check_output(
+            ["gcloud", "run", "services", "describe", "weather-agent", "--region", region, "--format", "value(status.url)"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        if discovered:
+            return discovered.rstrip("/")
+    except Exception:
+        pass
+    return "http://localhost:8080"
+
+
+CLOUD_RUN_URL = resolve_weather_agent_url()
+
+# 3. Instantiate the Remote A2A Weather Agent Proxy
 # The proxy discovers capabilities by fetching /.well-known/agent-card.json from Cloud Run
 remote_weather_agent = RemoteA2aAgent(
     name="weather_agent",
@@ -510,7 +589,7 @@ remote_weather_agent = RemoteA2aAgent(
     agent_card=f"{CLOUD_RUN_URL}/.well-known/agent-card.json",
 )
 
-# 2. Define Root Orchestrator Instructions
+# 4. Define Root Orchestrator Instructions
 ROOT_INSTRUCTIONS = """
 You are the Root Travel Concierge. You assist travelers by coordinating their trip preparations end-to-end.
 
@@ -520,7 +599,7 @@ When a user asks about traveling to a city, planning a day out, or what they sho
 3. Finally, combine the findings into a clear, friendly, and complete travel summary for the user.
 """
 
-# 3. Define the Root Agent coordinating both sub-agents
+# 5. Define the Root Agent coordinating both sub-agents
 root_agent = Agent(
     name="travel_concierge",
     model="gemini-3.8-flash",
@@ -550,14 +629,9 @@ Google ADK provides a browser-based developer interface for chatting with agents
 
 ### 7.1 Launch the ADK Web Server
 
-Export your `WEATHER_AGENT_URL` and run `adk web` from your project root:
+Because the Root Agent automatically discovers your configuration directly from `.env` or `gcloud`, you can start the UI directly:
 
 ```bash
-export WEATHER_AGENT_URL=$(gcloud run services describe weather-agent \
-    --region $REGION \
-    --format 'value(status.url)')
-
-# Launch the developer UI
 adk web
 ```
 

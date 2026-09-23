@@ -1,8 +1,38 @@
 """Entrypoint for serving the Weather Agent over the A2A protocol."""
 
 import os
+import subprocess
+from dotenv import load_dotenv
 from google.adk.a2a.utils.agent_to_a2a import to_a2a
 from weather_agent.agent import root_agent
+
+# 1. Automatically load .env if present
+load_dotenv()
+
+# 2. Automatically discover GOOGLE_CLOUD_PROJECT from terminal/gcloud or ADC if missing
+if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
+    try:
+        import google.auth
+        _, project = google.auth.default()
+        if project:
+            os.environ["GOOGLE_CLOUD_PROJECT"] = project
+    except Exception:
+        pass
+    if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
+        try:
+            proj = subprocess.check_output(
+                ["gcloud", "config", "get-value", "project"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=2,
+            ).strip()
+            if proj:
+                os.environ["GOOGLE_CLOUD_PROJECT"] = proj
+        except Exception:
+            pass
+
+os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "TRUE")
+os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
 
 # Determine port from Cloud Run environment (defaults to 8080)
 port = int(os.environ.get("PORT", "8080"))

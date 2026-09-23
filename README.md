@@ -15,9 +15,11 @@ The full, step-by-step walkthrough is available in [codelab.md](file:///Users/aj
 
 ---
 
-## 🚀 Quickstart
+## 🚀 Quickstart (Zero Copy-Paste Setup)
 
 ### 1. Setup Environment
+All project and region configs are pulled directly from your terminal (`gcloud config`):
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -26,38 +28,45 @@ pip install -r requirements.txt
 # Authenticate with Google Cloud Vertex AI
 gcloud auth application-default login
 
-export PROJECT_ID=$(gcloud config get-value project)
-export REGION="us-central1"
+# Automatically configure .env directly from your terminal session
+./setup_env.sh
 
-# Enable required APIs
+# Enable required Google Cloud services
+export PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+export REGION=$(gcloud config get-value compute/region 2>/dev/null || echo "us-central1")
+export REGION=${REGION:-us-central1}
+
 gcloud services enable run.googleapis.com \
     artifactregistry.googleapis.com \
     cloudbuild.googleapis.com \
     aiplatform.googleapis.com
-
-cp .env.example .env
-# Edit .env with your GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION
 ```
 
 ### 2. Deploy Weather Agent to Google Cloud Run (Public/Unauthenticated)
 ```bash
-PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+# Automatically bind Vertex AI permissions to the compute service account
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
 
-gcloud projects add-iam-policy-binding $PROJECT_ID \
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
     --role="roles/aiplatform.user"
 
+# Deploy to Cloud Run using terminal variables directly
 gcloud run deploy weather-agent \
     --source . \
-    --region $REGION \
+    --region "$REGION" \
     --allow-unauthenticated \
-    --set-env-vars GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION
+    --set-env-vars GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT="$PROJECT_ID",GOOGLE_CLOUD_LOCATION="$REGION"
+
+# Automatically write the deployed Cloud Run URL into .env (no copy-pasting required)
+echo "WEATHER_AGENT_URL=$(gcloud run services describe weather-agent --region "$REGION" --format='value(status.url)')" >> .env
 ```
 
 ### 3. Start ADK Web UI
+The Root Agent (`travel_concierge`) automatically discovers the deployed Cloud Run service URL and project configuration directly from the terminal/environment:
+
 ```bash
-export WEATHER_AGENT_URL=$(gcloud run services describe weather-agent --region $REGION --format 'value(status.url)')
 adk web
 ```
 Navigate to `http://127.0.0.1:8000`, select **`travel_concierge`**, and test:
-> *"I'm traveling to Seattle today for an outdoor walking tour. What should I wear?"*
+> *"I'm traveling to Seattle today for an outdoor walking tour. What should I wear and pack?"*
