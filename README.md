@@ -8,7 +8,7 @@ The full, step-by-step walkthrough is available in [codelab.md](file:///Users/aj
 ---
 
 ## 🏗️ Architecture
-- **`weather_agent`**: Specialist remote ADK agent powered by **Gemini 3.8 Flash** via **Vertex AI** with weather retrieval tools, exposed as an A2A service via `to_a2a()`, and deployed to Google Cloud Run (`--allow-unauthenticated`).
+- **`weather_agent`**: Specialist remote ADK agent powered by **Gemini 3.8 Flash** via **Vertex AI** with live weather retrieval tools via **Google Maps Platform Weather API** (`weather.googleapis.com`), exposed as an A2A service via `to_a2a()`, and deployed to Google Cloud Run (`--allow-unauthenticated`).
 - **`itinerary_planner`**: Specialist local ADK agent (Gemini 3.8 Flash) that suggests clothing and reminds the user to bring an umbrella if rain is forecast.
 - **`travel_concierge` (Root Agent)**: The primary orchestrator agent that coordinates between `weather_agent` (via `RemoteA2aAgent`) and `itinerary_planner`.
 - **ADK Web UI**: Interactive chat interface to talk directly to `travel_concierge` and visualize multi-agent collaboration and reasoning traces.
@@ -39,7 +39,8 @@ export REGION=${REGION:-us-central1}
 gcloud services enable run.googleapis.com \
     artifactregistry.googleapis.com \
     cloudbuild.googleapis.com \
-    aiplatform.googleapis.com
+    aiplatform.googleapis.com \
+    weather.googleapis.com
 ```
 
 ### 2. Deploy Weather Agent to Google Cloud Run (Public/Unauthenticated)

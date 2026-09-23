@@ -13,21 +13,30 @@ def run_tests():
     print("=" * 60)
 
     # ----------------------------------------------------
-    # Test 1: Weather Tool Execution
+    # Test 1: Weather Tool Execution (Google Weather API / Resilient Fallback)
     # ----------------------------------------------------
     print("\n[TEST 1] Testing Weather Tool 'get_current_weather'...")
     try:
         from weather_agent.agent import get_current_weather
         result_seattle = get_current_weather("Seattle, WA")
-        assert result_seattle["location"] == "Seattle, WA"
-        assert result_seattle["precipitation_chance"] == 90
-        assert "rain" in result_seattle["condition"].lower()
+        assert "Seattle" in result_seattle["location"]
+        assert "temperature_f" in result_seattle
+        assert isinstance(result_seattle["temperature_f"], (int, float))
+        assert "condition" in result_seattle
+        assert "precipitation_chance" in result_seattle
+        assert isinstance(result_seattle["precipitation_chance"], int)
+        assert "humidity" in result_seattle
+        assert "wind_mph" in result_seattle
+        assert "source" in result_seattle
 
         result_phoenix = get_current_weather("Phoenix, AZ")
-        assert result_phoenix["temperature_f"] == 98
-        assert result_phoenix["precipitation_chance"] == 0
+        assert "Phoenix" in result_phoenix["location"]
+        assert "temperature_f" in result_phoenix
+        assert "condition" in result_phoenix
 
-        print("  ✓ Weather tool returns accurate deterministic data for Seattle and Phoenix.")
+        print(f"  ✓ Weather tool returned valid structure:")
+        print(f"    - Seattle: {result_seattle['temperature_f']}°F, {result_seattle['condition']}, Precip: {result_seattle['precipitation_chance']}% (Source: {result_seattle['source']})")
+        print(f"    - Phoenix: {result_phoenix['temperature_f']}°F, {result_phoenix['condition']}, Precip: {result_phoenix['precipitation_chance']}% (Source: {result_phoenix['source']})")
     except Exception as e:
         print(f"  ✗ Failed testing weather tool: {e}")
         return False
