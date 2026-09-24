@@ -32,17 +32,44 @@ GOOGLE_CLOUD_LOCATION=${LOCATION}
 WEATHER_AGENT_URL=${WEATHER_AGENT_URL}
 EOF
 
-# Update weather_agent/agent.json with the deterministic Cloud Run URL
-if [ -f "weather_agent/agent.json" ]; then
-  python3 -c "
-import json
-with open('weather_agent/agent.json', 'r') as f:
-    data = json.load(f)
-data['url'] = '${WEATHER_AGENT_URL}'
-with open('weather_agent/agent.json', 'w') as f:
-    json.dump(data, f, indent=2)
-"
-fi
+# Generate weather_agent/agent.json dynamically with the deterministic Cloud Run URL
+mkdir -p weather_agent
+cat <<EOF > weather_agent/agent.json
+{
+  "name": "weather_agent",
+  "description": "Specialist agent that provides current weather forecasts, temperature, and precipitation conditions for any city.",
+  "version": "1.0.0",
+  "url": "${WEATHER_AGENT_URL}",
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "capabilities": {
+    "streaming": true
+  },
+  "skills": [
+    {
+      "id": "get_current_weather",
+      "name": "Get Current Weather",
+      "description": "Retrieves temperature, conditions, humidity, and precipitation percentage for any location using Google Search Grounding.",
+      "tags": [
+        "weather",
+        "forecast",
+        "precipitation",
+        "search-grounding"
+      ],
+      "examples": [
+        "What is the weather in Seattle, WA?",
+        "Check weather in London, UK",
+        "Is it raining in Phoenix, AZ?"
+      ]
+    }
+  ]
+}
+EOF
 
 echo "✅ Successfully configured environment:"
 echo "   • GOOGLE_CLOUD_PROJECT      = ${PROJECT_ID}"

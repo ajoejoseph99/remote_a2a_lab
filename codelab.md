@@ -203,17 +203,44 @@ GOOGLE_CLOUD_LOCATION=${LOCATION}
 WEATHER_AGENT_URL=${WEATHER_AGENT_URL}
 INNER_EOF
 
-# Update weather_agent/agent.json with the deterministic Cloud Run URL
-if [ -f "weather_agent/agent.json" ]; then
-  python3 -c "
-import json
-with open('weather_agent/agent.json', 'r') as f:
-    data = json.load(f)
-data['url'] = '${WEATHER_AGENT_URL}'
-with open('weather_agent/agent.json', 'w') as f:
-    json.dump(data, f, indent=2)
-"
-fi
+# Generate weather_agent/agent.json dynamically with the deterministic Cloud Run URL
+mkdir -p weather_agent
+cat <<INNER_EOF > weather_agent/agent.json
+{
+  "name": "weather_agent",
+  "description": "Specialist agent that provides current weather forecasts, temperature, and precipitation conditions for any city.",
+  "version": "1.0.0",
+  "url": "${WEATHER_AGENT_URL}",
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "capabilities": {
+    "streaming": true
+  },
+  "skills": [
+    {
+      "id": "get_current_weather",
+      "name": "Get Current Weather",
+      "description": "Retrieves temperature, conditions, humidity, and precipitation percentage for any location using Google Search Grounding.",
+      "tags": [
+        "weather",
+        "forecast",
+        "precipitation",
+        "search-grounding"
+      ],
+      "examples": [
+        "What is the weather in Seattle, WA?",
+        "Check weather in London, UK",
+        "Is it raining in Phoenix, AZ?"
+      ]
+    }
+  ]
+}
+INNER_EOF
 
 echo "✅ Successfully configured environment:"
 echo "   • GOOGLE_CLOUD_PROJECT      = ${PROJECT_ID}"
@@ -300,14 +327,20 @@ root_agent = Agent(
 
 In the A2A protocol, an **Agent Card** is a standardized, machine-readable digital manifest (governed by RFC 8615 well-known URI standards) that describes an agent's identity, communication capabilities, and callable skills. External consumer agents fetch this card during the **discovery phase** to determine how to format requests and what operations the agent supports without needing access to its internal code.
 
-Create `weather_agent/agent.json`:
+Generate `weather_agent/agent.json` using `cat`, dynamically extracting the project number and region from your terminal session to form the deterministic Cloud Run URL:
 
-```json
+```bash
+PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)' 2>/dev/null)
+REGION=$(gcloud config get-value compute/region 2>/dev/null || echo "us-central1")
+REGION=${REGION:-us-central1}
+
+cat <<EOF > weather_agent/agent.json
 {
   "name": "weather_agent",
   "description": "Specialist agent that provides current weather forecasts, temperature, and precipitation conditions for any city.",
   "version": "1.0.0",
-  "url": "https://weather-agent-727750094215.us-central1.run.app",
+  "url": "https://weather-agent-${PROJECT_NUMBER}.${REGION}.run.app",
   "defaultInputModes": [
     "text/plain"
   ],
@@ -337,6 +370,7 @@ Create `weather_agent/agent.json`:
     }
   ]
 }
+EOF
 ```
 
 #### Key Schema Attributes
