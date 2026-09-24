@@ -4,12 +4,12 @@
 
 In modern AI architectures, a single monolithic agent cannot handle every enterprise task. Complex solutions require a **multi-agent ecosystem** where specialized agents collaborate across network boundaries, programming languages, and cloud environments.
 
-The **Agent Development Kit (ADK)** is Google's open, code-first framework designed for building, orchestrating, and evaluating AI agents. To connect decentralized agents across different runtimes, Google and the open-source community developed the **Agent2Agent (A2A) Protocol**—an open standard based on JSON-RPC 2.0 over HTTP and Server-Sent Events (SSE) that allows agents to discover capabilities and interact seamlessly.
+The **Agent Development Kit (ADK)** is Google's open, code-first framework designed for building, orchestrating, and evaluating AI agents powered by Gemini foundation models. To connect decentralized agents across different runtimes, Google and the open-source community developed the **Agent2Agent (A2A) Protocol**—an open standard based on JSON-RPC 2.0 over HTTP and Server-Sent Events (SSE) that allows agents to discover capabilities, negotiate modalities, and interact seamlessly.
 
 In this codelab, you will build and connect three collaborating agents:
-1. **Weather Agent (`weather_agent`)**: A specialized agent equipped with weather lookup tools, exposed as an A2A service, and deployed to **Google Cloud Run** with public/unauthenticated access.
-2. **Itinerary Planner Agent (`itinerary_planner`)**: A local specialist agent that analyzes weather conditions to recommend appropriate outfits and packing advice, explicitly reminding the user to pack an umbrella whenever rain is detected.
-3. **Root Agent (`travel_concierge`)**: The primary orchestrator agent running locally in ADK that handles the user conversation by coordinating between the remote `weather_agent` (via `RemoteA2aAgent`) and the local `itinerary_planner` agent.
+1. **Weather Agent (`weather_agent`)**: A remote domain specialist equipped with Vertex AI Google Search Grounding, exposed as an A2A service, and deployed to **Google Cloud Run** with public/unauthenticated access.
+2. **Itinerary Planner Agent (`itinerary_planner`)**: A local specialist agent that evaluates weather conditions to recommend appropriate attire and packing checklists, explicitly reminding the user to pack an umbrella whenever rain is detected.
+3. **Root Agent (`travel_concierge`)**: The primary orchestrator agent running locally in ADK that handles the end-to-end user conversation by coordinating between the remote `weather_agent` (via `RemoteA2aAgent`) and the local `itinerary_planner` agent using a deterministic `SequentialAgent` pipeline.
 
 You will interact with this multi-agent system through the built-in **ADK Web UI** by chatting directly with the Root Agent.
 
@@ -61,21 +61,23 @@ You will interact with this multi-agent system through the built-in **ADK Web UI
 ---
 
 ### What You Will Learn
-- How to build tool-enabled agents using Google ADK.
-- How to convert an ADK agent into an A2A-compliant server using `to_a2a()`.
+- How to construct tool-enabled domain agents using Google ADK and Vertex AI Search Grounding.
+- How to expose an ADK agent as an A2A-compliant microservice using `to_a2a()`.
+- How to author and serve an RFC 8615 Agent Card manifest (`agent.json`).
 - How to containerize and deploy an A2A agent to Google Cloud Run.
-- How to consume a remote agent using ADK's `RemoteA2aAgent` client proxy.
-- How to test and inspect multi-agent communication traces using the ADK Web UI.
-- Best practices for securing agent-to-agent communication on Google Cloud.
+- How to configure deterministic Cloud Run URLs for A2A discovery without requiring origin-rewriting middleware.
+- How to consume a remote agent over the network using ADK's `RemoteA2aAgent` client proxy.
+- How to orchestrate multi-agent pipelines deterministically using `SequentialAgent`.
+- How to inspect multi-agent communication traces and execution graphs using the ADK Web UI.
 
 ---
 
 ### Prerequisites
-- A Google Cloud Platform (GCP) account with billing enabled.
-- The `gcloud` CLI installed and authenticated (`gcloud auth login` and `gcloud auth application-default login`).
-- Python 3.10 or higher.
-- Google Cloud Vertex AI API (`aiplatform.googleapis.com`) enabled.
-- Docker (optional, as Cloud Run can build source containers directly).
+- A Google Cloud Platform (GCP) project with billing enabled.
+- The Google Cloud CLI (`gcloud`) installed and authenticated (`gcloud auth login` and `gcloud auth application-default login`).
+- Python 3.10 or higher installed locally.
+- Google Cloud Vertex AI API (`aiplatform.googleapis.com`) and Cloud Run API (`run.googleapis.com`) enabled.
+- Basic familiarity with Python and asynchronous web services.
 
 ---
 
@@ -100,7 +102,7 @@ a2a-codelab/
 ├── Dockerfile              # Container specification for Google Cloud Run deployment
 ├── Procfile                # Cloud Run / Buildpacks process entrypoint
 ├── requirements.txt        # Single root dependencies file for ADK and all agents
-├── setup_env.sh            # Automated zero-copy-paste environment configuration script
+├── setup_env.sh            # Automated environment configuration script for Google Cloud settings
 ├── test_setup.py           # Verification test suite for all agents and A2A endpoints
 ├── weather_agent/          # Remote A2A Specialist Agent (deployed to Cloud Run)
 │   ├── agent.py            # Weather specialist powered by Google Search Grounding
@@ -116,6 +118,8 @@ a2a-codelab/
 
 ### 2.2 Create and Activate a Python Virtual Environment
 
+Isolating your Python environment prevents dependency conflicts between your system packages and the libraries used in this codelab:
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -125,7 +129,7 @@ source .venv/bin/activate
 
 ### 2.3 Install Google ADK with A2A Support
 
-Create `requirements.txt` in your project root:
+Create `requirements.txt` in your project root to define the required packages:
 
 ```bash
 cat <<'EOF' > requirements.txt
@@ -138,6 +142,13 @@ python-dotenv>=1.0.0
 EOF
 ```
 
+Here is an overview of the key libraries:
+- **`google-adk[a2a]`**: The core Google Agent Development Kit framework, including networking extensions for the Agent2Agent protocol.
+- **`a2a-sdk[http-server]`**: The official Python implementation of the Agent2Agent protocol specification, providing data models, JSON-RPC 2.0 serialization, and HTTP server transports.
+- **`uvicorn` & `fastapi`**: The ASGI server stack used by ADK to host the A2A discovery and task execution endpoints.
+- **`google-auth`**: Manages Google Cloud Application Default Credentials (ADC) to authenticate requests to Vertex AI.
+- **`python-dotenv`**: Loads configuration variables from `.env` into `os.environ`.
+
 Install the dependencies:
 
 ```bash
@@ -146,15 +157,15 @@ pip install -r requirements.txt
 
 ---
 
-### 2.4 Configure Environment Variables & Vertex AI (Zero Copy-Paste)
+### 2.4 Configure Environment Variables and Vertex AI
 
-Authenticate your local terminal with Google Cloud Application Default Credentials (ADC):
+Authenticate your local environment using Google Cloud Application Default Credentials (ADC). This allows local scripts and ADK agents to securely access Vertex AI foundation models:
 
 ```bash
 gcloud auth application-default login
 ```
 
-Create an automated configuration script `setup_env.sh` that pulls your active GCP project and default region directly from your `gcloud` terminal session—**no manual copy-pasting required**:
+Create an automated configuration script `setup_env.sh` that detects your active Google Cloud project, resolves your project number and region to calculate the deterministic Cloud Run service URL ahead of time, and configures the environment:
 
 ```bash
 cat <<'EOF' > setup_env.sh
@@ -170,27 +181,52 @@ if [ -z "$PROJECT_ID" ]; then
   exit 1
 fi
 
+# Query project number and region for deterministic Cloud Run URL
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)' 2>/dev/null)
+REGION=$(gcloud config get-value compute/region 2>/dev/null || echo "us-central1")
+REGION=${REGION:-us-central1}
+SERVICE_NAME="weather-agent"
+
+if [ -n "$PROJECT_NUMBER" ] && [ -n "$REGION" ]; then
+  WEATHER_AGENT_URL="https://${SERVICE_NAME}-${PROJECT_NUMBER}.${REGION}.run.app"
+else
+  WEATHER_AGENT_URL="http://localhost:8080"
+fi
+
 # Set Vertex AI Model Location to global (required for Gemini 3.8 Flash)
 LOCATION="global"
 
-# Generate .env automatically with zero manual copy-pasting
 cat <<INNER_EOF > .env
 GOOGLE_GENAI_USE_VERTEXAI=TRUE
 GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
 GOOGLE_CLOUD_LOCATION=${LOCATION}
+WEATHER_AGENT_URL=${WEATHER_AGENT_URL}
 INNER_EOF
 
-echo "✅ Successfully configured .env automatically from terminal:"
+# Update weather_agent/agent.json with the deterministic Cloud Run URL
+if [ -f "weather_agent/agent.json" ]; then
+  python3 -c "
+import json
+with open('weather_agent/agent.json', 'r') as f:
+    data = json.load(f)
+data['url'] = '${WEATHER_AGENT_URL}'
+with open('weather_agent/agent.json', 'w') as f:
+    json.dump(data, f, indent=2)
+"
+fi
+
+echo "✅ Successfully configured environment:"
 echo "   • GOOGLE_CLOUD_PROJECT      = ${PROJECT_ID}"
 echo "   • GOOGLE_CLOUD_LOCATION     = ${LOCATION}"
 echo "   • GOOGLE_GENAI_USE_VERTEXAI = TRUE"
+echo "   • WEATHER_AGENT_URL         = ${WEATHER_AGENT_URL}"
 EOF
 
 chmod +x setup_env.sh
 ./setup_env.sh
 ```
 
-Next, enable the required Google Cloud APIs for Cloud Run and Vertex AI:
+Next, enable the necessary Google Cloud service APIs for Cloud Run container deployment, image storage, and Vertex AI:
 
 ```bash
 export PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
@@ -202,19 +238,26 @@ gcloud services enable run.googleapis.com \
     aiplatform.googleapis.com
 ```
 
-> **Zero Copy-Paste Advantage:** You do not need to look up or manually edit project IDs or location strings in `.env`. The values are read dynamically from your active `gcloud` terminal configuration with Vertex AI configured globally!
+These services provide the following capabilities:
+- **`run.googleapis.com`**: Google Cloud Run, a fully managed serverless platform for deploying and scaling containerized microservices.
+- **`artifactregistry.googleapis.com`**: Manages container images and build artifacts.
+- **`cloudbuild.googleapis.com`**: Executes cloud-based container builds directly from source code.
+- **`aiplatform.googleapis.com`**: Google Cloud Vertex AI, providing access to Gemini 3.8 Flash and live Google Search Grounding.
+
+> [!NOTE]
+> **Automated Environment Resolution:** The `setup_env.sh` script dynamically queries your active Google Cloud CLI configuration. This ensures that `GOOGLE_CLOUD_PROJECT` matches your active gcloud account and sets `GOOGLE_CLOUD_LOCATION=global`, which is required for Vertex AI Gemini 3.8 Flash publisher endpoints.
 
 ---
 
 ## 3. Step 1: Build the Weather Agent
 
-The Weather Agent is a specialized domain agent whose responsibility is fetching and summarizing live weather forecasts for any requested location. 
+The Weather Agent acts as a specialized microservice whose sole responsibility is fetching and summarizing live meteorological data for any requested destination.
 
-Instead of requiring external weather APIs or complex third-party credentials, the Weather Agent uses the **native Google Search Grounding tool** (`google_search`) available directly in the Google ADK. Gemini 3.8 Flash uses live Google Search Grounding on Vertex AI to retrieve real-time weather, temperature, sky conditions, and precipitation probabilities.
+Rather than relying on third-party weather API subscriptions, custom scrapers, or hardcoded tokens, this agent uses the **built-in Google Search Grounding tool** (`google_search`) provided by the Google ADK. Gemini 3.8 Flash uses Vertex AI Search Grounding to autonomously execute live search queries, extract real-time temperatures, sky conditions, and precipitation percentages, and ground its answers in factual web sources.
 
 ### 3.1 Define the Weather Agent (`weather_agent/agent.py`)
 
-In ADK, giving Gemini real-time search capabilities is as simple as adding `tools=[google_search]`.
+In Google ADK, agents are defined declaratively using the `Agent` class from `google.adk.agents.llm_agent`. Adding Vertex AI Search Grounding requires only passing `tools=[google_search]`.
 
 Create `weather_agent/agent.py`:
 
@@ -246,21 +289,25 @@ root_agent = Agent(
 )
 ```
 
+#### Key Functions and Concepts
+- **`Agent`**: The foundational abstraction in ADK representing an LLM-powered agent. It encapsulates the model selection (`gemini-3.8-flash`), system prompt instructions, metadata description, and callable tools into an executable unit.
+- **`google_search`**: Built-in tool from `google.adk.tools`. When provided in the `tools` list, the Gemini model on Vertex AI dynamically activates Google Search Grounding to look up real-time information and cite its sources.
+- **Strict Domain Boundaries**: Notice the explicit negative constraint in `instruction`: `"CRITICAL DOMAIN BOUNDARY: You ONLY provide the meteorological weather forecast. NEVER suggest what to wear, pack, or carry..."`. In a multi-agent architecture, strict domain boundaries prevent overlapping responsibilities and ensure that downstream specialists (like the Itinerary Planner) control styling and packing decisions.
+
 ---
 
 ### 3.2 Create the Agent Card (`weather_agent/agent.json`)
 
-In the A2A protocol, an **Agent Card** is a standardized, machine-readable digital manifest (RFC 8615 well-known URI) that describes the agent's identity, communication capabilities, and callable skills. External consumer agents (like `itinerary_planner`) fetch this card during the **discovery phase** to determine how to interact with the agent without needing access to its internal code.
+In the A2A protocol, an **Agent Card** is a standardized, machine-readable digital manifest (governed by RFC 8615 well-known URI standards) that describes an agent's identity, communication capabilities, and callable skills. External consumer agents fetch this card during the **discovery phase** to determine how to format requests and what operations the agent supports without needing access to its internal code.
 
 Create `weather_agent/agent.json`:
 
 ```json
 {
-  "$schema": "https://a2a-protocol.org/schemas/v1/agent.json",
   "name": "weather_agent",
   "description": "Specialist agent that provides current weather forecasts, temperature, and precipitation conditions for any city.",
   "version": "1.0.0",
-  "url": "http://localhost:8080",
+  "url": "https://weather-agent-727750094215.us-central1.run.app",
   "defaultInputModes": [
     "text/plain"
   ],
@@ -269,9 +316,7 @@ Create `weather_agent/agent.json`:
     "application/json"
   ],
   "capabilities": {
-    "streaming": true,
-    "pushNotifications": false,
-    "stateTransitionHistory": false
+    "streaming": true
   },
   "skills": [
     {
@@ -284,8 +329,6 @@ Create `weather_agent/agent.json`:
         "precipitation",
         "search-grounding"
       ],
-      "inputModes": ["text/plain"],
-      "outputModes": ["application/json", "text/plain"],
       "examples": [
         "What is the weather in Seattle, WA?",
         "Check weather in London, UK",
@@ -296,15 +339,19 @@ Create `weather_agent/agent.json`:
 }
 ```
 
-> **A2A Schema Requirements:** The A2A specification mandates top-level `url`, `defaultInputModes`, `defaultOutputModes`, and skill-level `tags`. Providing these fields ensures strict compliance with RFC 8615 Agent Card discovery.
+#### Key Schema Attributes
+- **`url`**: The base RPC endpoint where the agent listens for incoming JSON-RPC 2.0 execution requests. Cloud Run provisions services with a deterministic URL pattern (`https://[service-name]-[project-number].[region-code].run.app`). Setting this URL in the Agent Card allows external agents to validate that the card origin matches the RPC endpoint.
+- **`defaultInputModes` / `defaultOutputModes`**: MIME types defining payload formats supported by the agent (e.g. `text/plain` for natural language and `application/json` for structured data).
+- **`capabilities`**: Protocol feature declarations. Setting `"streaming": true` informs client agents that this service supports incremental token delivery via Server-Sent Events (SSE).
+- **`skills`**: An array of functional capability declarations. Each skill defines an identifier (`id`), human-readable name, semantic description, classification `tags`, and representative sample prompts (`examples`) used by orchestrators to route user requests.
 
 ---
 
 ### 3.3 Expose the Agent as an A2A Server (`weather_agent/main.py`)
 
-To allow external agents to discover and call the Weather Agent over the network, we wrap it with ADK's `to_a2a()` utility and supply our Agent Card. This automatically creates an ASGI Starlette/FastAPI application that serves:
-1. `/.well-known/agent.json`: Serves the Agent Card describing capabilities and skills for agent discovery.
-2. `/tasks`: The JSON-RPC 2.0 endpoint for receiving task execution requests and streaming responses.
+To allow external agents to discover and invoke the Weather Agent over the network, we wrap it using ADK's `to_a2a()` utility and supply our Agent Card. This automatically constructs an ASGI Starlette/FastAPI application serving:
+1. `/.well-known/agent-card.json` (and `/.well-known/agent.json`): Publishes the Agent Card for discovery.
+2. `/tasks` (and `/`): The JSON-RPC 2.0 endpoint for receiving task requests and streaming execution results.
 
 Create `weather_agent/main.py`:
 
@@ -364,7 +411,7 @@ def _load_agent_card():
         with open(agent_card_path, "r") as f:
             card_data = json.load(f)
         # Ensure mandatory A2A schema fields are present
-        card_data["url"] = os.environ.get("WEATHER_AGENT_URL") or os.environ.get("SERVICE_URL") or f"http://localhost:{port}"
+        card_data["url"] = os.environ.get("WEATHER_AGENT_URL") or card_data.get("url") or f"http://localhost:{port}"
         card_data.setdefault("defaultInputModes", ["text/plain"])
         card_data.setdefault("defaultOutputModes", ["text/plain", "application/json"])
         card_data.setdefault("capabilities", {"streaming": True})
@@ -385,57 +432,34 @@ app = to_a2a(
     port=port,
 )
 
-
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
-
-
-class DynamicAgentCardOriginMiddleware(BaseHTTPMiddleware):
-    """Dynamically aligns the Agent Card RPC URL with the request's actual origin (e.g. Cloud Run HTTPS host)."""
-    async def dispatch(self, request, call_next):
-        response = await call_next(request)
-        if request.url.path in ("/.well-known/agent-card.json", "/.well-known/agent.json") and response.status_code == 200:
-            proto = request.headers.get("x-forwarded-proto", request.url.scheme)
-            host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.netloc))
-            origin = f"{proto}://{host}"
-            try:
-                body = [chunk async for chunk in response.body_iterator]
-                card_json = json.loads(b"".join(body))
-                card_json["url"] = origin
-                new_content = json.dumps(card_json).encode("utf-8")
-                headers = dict(response.headers)
-                headers["content-length"] = str(len(new_content))
-                return Response(content=new_content, status_code=200, headers=headers, media_type="application/json")
-            except Exception:
-                pass
-        return response
-
-
-app.add_middleware(DynamicAgentCardOriginMiddleware)
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=port)
 ```
 
+#### Detailed Code Explanation
+- **`to_a2a(root_agent, agent_card, port)`**: Core conversion utility from `google.adk.a2a.utils.agent_to_a2a`. It wraps an ADK `Agent` instance into an ASGI web service, automatically mounting the standard discovery routes (`/.well-known/agent-card.json`) and the JSON-RPC task execution endpoints.
+- **`_load_agent_card()`**: Safely parses `agent.json`, verifies that mandatory A2A schema attributes (`url`, `defaultInputModes`, `capabilities`, `tags`) are populated, and returns a validated `a2a.types.AgentCard` object.
+- **Deterministic URL Matching**: Because the Agent Card's `url` property is pre-configured with the deterministic Cloud Run URL (`https://${SERVICE_NAME}-${PROJECT_NUMBER}.${REGION}.run.app`), the card origin directly matches the deployed Cloud Run origin without requiring dynamic origin-rewriting middleware.
+
 ---
 
 ### 3.4 Test the Weather Agent Locally
 
-Before deploying to the cloud, let's verify that the A2A server boots up and serves its Agent Card for discovery:
+Before deploying to Google Cloud, verify that the local A2A server starts correctly and serves its discovery manifest:
 
 ```bash
 export PYTHONPATH=$PWD
 python3 weather_agent/main.py
 ```
 
-In a separate terminal window, test the endpoint:
+In a separate terminal window, query the discovery endpoint:
 
 ```bash
 curl -s http://localhost:8080/.well-known/agent.json | jq .
 ```
 
-You should see your **Agent Card** JSON containing the advertised capabilities and skills:
+You should receive the Agent Card JSON declaring the agent's capabilities and skills:
 ```json
 {
   "name": "weather_agent",
@@ -453,17 +477,17 @@ You should see your **Agent Card** JSON containing the advertised capabilities a
 }
 ```
 
-Press `Ctrl + C` in the first terminal to stop the local server.
+This confirms the A2A ASGI server is operating and ready for containerization. Press `Ctrl + C` in the first terminal to stop the local server.
 
 ---
 
 ## 4. Step 2: Containerize and Deploy to Google Cloud Run
 
-Google Cloud Run is an ideal runtime for A2A servers: it provides serverless autoscaling, automatic HTTPS endpoints, and native identity verification.
+Google Cloud Run is an ideal production runtime for A2A microservices: it offers automatic TLS termination, serverless auto-scaling (including scale-to-zero when idle), integrated Google Cloud IAM authentication, and low-latency networking.
 
 ### 4.1 Verify Dependencies
 
-Your project dependencies are defined in a single `requirements.txt` in the root folder:
+Your project dependencies are consolidated in the root `requirements.txt`:
 
 ```text
 google-adk[a2a]>=0.1.0
@@ -478,7 +502,7 @@ python-dotenv>=1.0.0
 
 ### 4.2 Create the `Dockerfile`
 
-Create `Dockerfile` in your project root. It installs the root dependencies and starts the A2A server:
+Create `Dockerfile` in your project root. It installs dependencies and configures the container entrypoint:
 
 ```dockerfile
 FROM python:3.11-slim
@@ -505,7 +529,12 @@ EXPOSE 8080
 CMD ["python", "weather_agent/main.py"]
 ```
 
-Ensure `.dockerignore` and `.gcloudignore` are in your root directory to avoid uploading large virtual environments or secrets during the build:
+#### Container Design Considerations
+- **Base Image**: `python:3.11-slim` provides a lightweight, secure container footprint.
+- **Layer Caching**: Copying `requirements.txt` before the application code ensures that dependency installation is cached across builds unless dependencies change.
+- **Logging**: `PYTHONUNBUFFERED=1` ensures stdout/stderr are flushed immediately, allowing Cloud Logging to stream container logs in real time.
+
+Configure `.dockerignore` and `.gcloudignore` in your project root to exclude local virtual environments and temporary files from the build context:
 
 ```bash
 cat <<'EOF' > .dockerignore
@@ -528,7 +557,7 @@ cp .dockerignore .gcloudignore
 
 ### 4.3 Deploy to Google Cloud Run
 
-Grant the default Compute Engine service account permissions to call Vertex AI:
+To allow the containerized Weather Agent to call Vertex AI Gemini models and Google Search Grounding, grant the default Compute Engine service account the Vertex AI User role (`roles/aiplatform.user`):
 
 ```bash
 PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
@@ -538,7 +567,7 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
     --role="roles/aiplatform.user"
 ```
 
-Deploy the Weather Agent container to Cloud Run with Vertex AI configured (Cloud Run deploys to your compute region, while Vertex AI model calls route globally):
+Now deploy the service to Cloud Run using Google Cloud Build:
 
 ```bash
 export REGION=$(gcloud config get-value compute/region 2>/dev/null || echo "us-central1")
@@ -552,13 +581,17 @@ gcloud run deploy weather-agent \
     --set-env-vars GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=global
 ```
 
-> **Simplicity Note:** In this introductory codelab, we deploy with `--allow-unauthenticated` so that anyone can reach the remote A2A endpoint over HTTPS without needing complex IAM service account credentials.
+#### Deployment Parameters Explained
+- **`--source .`**: Tells Cloud Run to use Cloud Build to package the local directory, build the container image, push it to Artifact Registry, and deploy the container.
+- **`--platform managed`**: Deploys to Google Cloud's fully managed serverless infrastructure.
+- **`--allow-unauthenticated`**: Makes the endpoint publicly accessible over HTTPS without requiring IAM token validation, simplifying consumer agent discovery in this codelab.
+- **`--set-env-vars`**: Configures the runtime environment for Vertex AI, specifying `GOOGLE_CLOUD_LOCATION=global` for Gemini 3.8 Flash.
 
 ---
 
 ### 4.4 Verify the Deployed Cloud Run Service
 
-Capture the deployed Service URL directly from `gcloud` and write it to `.env` automatically:
+Retrieve the assigned Cloud Run URL and store it in your local `.env` file:
 
 ```bash
 export WEATHER_AGENT_URL=$(gcloud run services describe weather-agent \
@@ -571,21 +604,23 @@ echo "WEATHER_AGENT_URL=${WEATHER_AGENT_URL}" >> .env
 echo "Weather Agent running at: $WEATHER_AGENT_URL"
 ```
 
-Verify the Agent Card over public HTTPS:
+Verify that the remote service is healthy and serving its Agent Card over public HTTPS:
 
 ```bash
 curl -s "$WEATHER_AGENT_URL/.well-known/agent-card.json" | jq .
 ```
 
-If you receive the Agent Card JSON with status `200 OK`, your remote A2A Weather Agent is live in the cloud and ready for discovery!
+When you receive the Agent Card JSON with status `200 OK`, notice that the `url` property matches your live Cloud Run HTTPS URL (`https://weather-agent-[PROJECT_NUMBER].[REGION].run.app`), verifying that the deterministic Cloud Run URL configured before deployment perfectly satisfies the A2A protocol origin requirement.
 
 ---
 
 ## 5. Step 3: Build the Itinerary Planner Specialist Agent
 
-Next, we create our local specialist agent: **Itinerary Planner**.
+Now, we build the second specialized agent in our architecture: the **Itinerary Planner**.
 
-This agent specializes in wardrobe and packing advice. It focuses solely on translating weather conditions into actionable clothing recommendations and strictly enforcing the umbrella reminder when rain is in the forecast.
+Unlike the Weather Agent, which is a remote tool-enabled microservice, the Itinerary Planner is a local specialist agent focused purely on reasoning:
+- Translates weather conditions (temperature, humidity, precipitation) into practical fashion and packing advice.
+- Enforces an explicit conditional rule: whenever rain, drizzle, or showers are present in the forecast, it prominently reminds the traveler to pack an umbrella.
 
 Create `itinerary_planner/agent.py`:
 
@@ -612,15 +647,19 @@ When given weather conditions (temperature, sky condition, rain probability) for
 root_agent = itinerary_planner
 ```
 
+#### Design Highlights
+- **Single Responsibility**: The Itinerary Planner does not fetch weather data itself; it relies entirely on the meteorological context supplied by the Weather Agent through the multi-agent session.
+- **Rule Adherence**: The prompt establishes a deterministic constraint requiring an umbrella alert when precipitation is present, illustrating how LLM agents can combine structured rules with natural language generation.
+
 ---
 
 ## 6. Step 4: Build the Root Agent (Travel Concierge)
 
-Now, we create the **Root Agent (`travel_concierge`)** that acts as the primary coordinator handling the user's conversation and orchestrating the two specialist agents:
-1. **`weather_agent` (Remote Sub-agent)**: Connected via `RemoteA2aAgent` pointing to our public Cloud Run A2A endpoint.
-2. **`itinerary_planner` (Local Sub-agent)**: Imported and registered directly as an in-process sub-agent.
+Now, we build the primary orchestrator: the **Root Agent (`travel_concierge`)**.
 
-Notice how `travel_concierge` automatically resolves your project ID and Cloud Run URL from `.env` or directly from `gcloud`—**zero copy-pasting required**.
+In Google ADK, complex user interactions are orchestrated by a root agent that coordinates specialized sub-agents. Our Root Agent bridges the network boundary by composing two sub-agents:
+1. **`weather_agent` (Remote Sub-agent)**: Connected over the network via ADK's `RemoteA2aAgent` client proxy, pointing to our public Cloud Run HTTPS endpoint.
+2. **`itinerary_planner` (Local Sub-agent)**: Imported and executed in-process.
 
 Create `travel_concierge/agent.py`:
 
@@ -716,37 +755,46 @@ root_agent = SequentialAgent(
 
 ---
 
-### How the Root Agent Works: Sequential Multi-Agent Execution
+### In-Depth Architecture: How the Root Agent Operates
 
-In Google ADK, **`SequentialAgent`** acts as an orchestrator container that runs its `sub_agents` strictly in the order specified in `sub_agents=[...]`:
+#### 1. Endpoint Resolution Strategy (`resolve_weather_agent_url`)
+The helper function dynamically determines the Weather Agent's network location using a fallback hierarchy:
+1. **Live Cloud Run Inspection**: Queries `gcloud run services describe` to retrieve the current HTTPS URL if deployed.
+2. **Environment Variable**: Reads `WEATHER_AGENT_URL` from `.env` or system environment.
+3. **Localhost Fallback**: Defaults to `http://localhost:8080` for local offline development.
 
-1. **Step 1: Weather Retrieval (`weather_agent`)**:
-   - `travel_concierge` first invokes the remote `weather_agent` over HTTPS via A2A JSON-RPC.
-   - On Google Cloud Run, `weather_agent` uses Google Search Grounding on Vertex AI to fetch live conditions (temperature, sky condition, rain probability) and streams the weather summary into the conversation session.
+#### 2. The `RemoteA2aAgent` Client Proxy
+`RemoteA2aAgent` is an ADK class from `google.adk.agents.remote_a2a_agent`. It acts as a transparent proxy for remote agents:
+- **Discovery**: At initialization, it fetches the Agent Card from the URL provided in `agent_card` (`f"{CLOUD_RUN_URL}/.well-known/agent-card.json"`), caching the agent's capabilities, input/output modes, and RPC endpoint.
+- **Protocol Translation**: When invoked, it translates conversation history into standard JSON-RPC 2.0 messages and sends them over HTTPS.
+- **Stream Processing**: Handles Server-Sent Events (SSE) from the remote service and feeds responses back into the local ADK runtime as native agent messages.
+- **Developer Experience**: To the parent agent, `RemoteA2aAgent` looks and behaves just like an in-process local agent.
 
-2. **Step 2: Attire & Packing Planning (`itinerary_planner`)**:
-   - As soon as `weather_agent` finishes, `SequentialAgent` immediately invokes the second sub-agent: `itinerary_planner`.
-   - `itinerary_planner` has full visibility into the conversation session—including the weather report just generated by `weather_agent`.
-   - It assesses the temperature, provides appropriate outfit recommendations, and strictly enforces the umbrella reminder if precipitation is present.
-
-3. **Guaranteed Execution**:
-   - Unlike conversational handoffs where control leaves the orchestrator, `SequentialAgent` guarantees that both specialist agents execute sequentially on every turn.
+#### 3. Deterministic Pipeline with `SequentialAgent`
+`SequentialAgent` from `google.adk.agents.sequential_agent` is a control-flow agent that executes its `sub_agents` strictly in array order:
+- **Phase 1: Weather Retrieval (`weather_agent`)**:
+  `travel_concierge` first invokes `remote_weather_agent`. The remote agent executes on Cloud Run, retrieves live weather using Vertex AI Google Search Grounding, and appends the meteorological report to the conversation session.
+- **Phase 2: Attire & Packing Planning (`itinerary_planner`)**:
+  As soon as the weather agent finishes, `SequentialAgent` immediately invokes `itinerary_planner`. The itinerary planner receives the full conversation context (including the newly generated weather report), evaluates the conditions, and outputs outfit recommendations with the appropriate umbrella reminder.
+- **Why Sequential Execution?**:
+  In workflows where Step B strictly depends on the findings of Step A, `SequentialAgent` provides deterministic execution guarantees. This eliminates the uncertainty of dynamic LLM routing and ensures both specialized agents execute on every turn.
 
 ---
 
 ## 7. Step 5: Test with the ADK Web UI
 
-Google ADK provides a browser-based developer interface for chatting with agents, visualizing sub-agent transfers, and inspecting tool execution.
+Google ADK includes an interactive web interface for testing agents, inspecting tool invocations, and visualizing multi-agent execution traces.
 
 ### 7.1 Launch the ADK Web Server
 
-Because the Root Agent automatically discovers your configuration directly from `.env` or `gcloud`, you can start the UI directly:
+Start the ADK web development server from your project root:
 
 ```bash
 adk web
 ```
 
-The output will display:
+ADK scans the directory, automatically discovers all exported agents (`travel_concierge`, `itinerary_planner`, and `weather_agent`), and starts an ASGI server:
+
 ```text
 INFO:     Started server process
 INFO:     Waiting for application startup.
@@ -758,26 +806,24 @@ INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 ### 7.2 Open the Web Interface
 
 1. Open your browser and navigate to: **`http://127.0.0.1:8000`**
-2. In the top-left agent selector dropdown, select **`travel_concierge`** (the Root Agent).
+2. In the agent selector dropdown at the top-left, select **`travel_concierge`** (the Root Agent).
 3. Start a new session.
 
 ---
 
 ### 7.3 Test Scenario 1: Rainy Destination (Seattle)
 
-In the chat box, type:
+In the chat input, submit:
 > *"I'm traveling to Seattle today for an outdoor walking tour. What should I wear and pack?"*
 
-**Observe the Multi-Agent Execution Flow in the UI:**
-1. **Root Coordination**: `travel_concierge` receives your prompt and determines it needs Seattle weather.
-2. **A2A Remote Call**: It invokes `weather_agent` across the network via A2A JSON-RPC over HTTPS.
-3. **Cloud Run Tool Execution**: On Cloud Run, `weather_agent` runs `get_current_weather(location="Seattle")` and returns:
-   - `temperature_f`: 54°F
-   - `condition`: "Rainy and overcast"
-   - `precipitation_chance`: 90%
-4. **Local Specialist Call**: `travel_concierge` forwards this report to `itinerary_planner`.
-5. **Attire & Umbrella Rule**: `itinerary_planner` suggests warm layers, waterproof jacket, and flags the umbrella alert!
-6. **Final Synthesis**: `travel_concierge` delivers the consolidated answer:
+#### Multi-Agent Execution Lifecycle
+1. **Sequential Turn Initiated**: `travel_concierge` (`SequentialAgent`) triggers the first sub-agent in its pipeline: `remote_weather_agent`.
+2. **A2A Network Dispatch**: `RemoteA2aAgent` serializes the prompt into a JSON-RPC 2.0 payload and sends it over HTTPS to your Google Cloud Run service.
+3. **Vertex AI Grounding**: On Cloud Run, `weather_agent` invokes Gemini with `google_search` Grounding, extracts current Seattle meteorological data, and streams the factual report back to your local machine.
+4. **Context Handoff**: `SequentialAgent` invokes the second sub-agent: `itinerary_planner`.
+5. **Conditional Reasoning**: `itinerary_planner` inspects the weather report, observes precipitation (e.g. 90% chance of rain), suggests waterproof clothing, and issues a prominent umbrella warning.
+
+Expected response format:
 
 ```markdown
 Here is your travel briefing for your Seattle walking tour:
@@ -799,14 +845,13 @@ There is a 90% chance of rain in Seattle today! You MUST pack an **umbrella** an
 
 ### 7.4 Test Scenario 2: Hot & Sunny Destination (Phoenix)
 
-In the same chat, type:
+In the same conversation session, enter:
 > *"What about if I fly to Phoenix, Arizona tomorrow instead?"*
 
-**Expected Output:**
-- `travel_concierge` calls `weather_agent` on Cloud Run for "Phoenix".
-- Receives: 98°F, Sunny, 0% precipitation.
-- `itinerary_planner` suggests breathable t-shirts, shorts, sunglasses, and sunhat.
-- **Notice**: No umbrella reminder is issued, verifying conditional reasoning!
+#### Execution Observations
+- The pipeline executes the identical sequential workflow: `weather_agent` on Cloud Run retrieves Phoenix weather (e.g., 98°F, Sunny, 0% precipitation).
+- `itinerary_planner` recommends light, breathable clothing, sunglasses, and a sunhat.
+- **Conditional Rule Validation**: Because precipitation is 0%, the agent correctly omits the umbrella alert, confirming accurate context-driven reasoning.
 
 ---
 
@@ -814,7 +859,7 @@ In the same chat, type:
 
 ### Add-on A: Inspecting the A2A Protocol Under the Hood
 
-The A2A standard uses JSON-RPC 2.0 messages. Here is what is exchanged on the wire when `travel_concierge` delegates to `weather_agent` on Cloud Run:
+The Agent2Agent (A2A) protocol standardizes agent interoperability using JSON-RPC 2.0 messages over HTTP. Below are the actual payloads exchanged between the local `travel_concierge` and the remote `weather_agent` on Google Cloud Run:
 
 #### Request Payload (`POST /` or `POST /tasks`):
 ```json
@@ -831,7 +876,7 @@ The A2A standard uses JSON-RPC 2.0 messages. Here is what is exchanged on the wi
 }
 ```
 
-#### Response Payload (Streamed via SSE):
+#### Response Payload (Streamed via Server-Sent Events):
 ```json
 {
   "jsonrpc": "2.0",
@@ -855,20 +900,54 @@ The A2A standard uses JSON-RPC 2.0 messages. Here is what is exchanged on the wi
 }
 ```
 
+#### Protocol Components
+- **`jsonrpc: "2.0"`**: Mandated protocol version identifier.
+- **`id`**: Unique request identifier for correlating asynchronous requests and responses.
+- **`method: "execute_task"`**: The standard A2A method for executing agent work.
+- **`params.task`**: Contains the input prompt, conversational context, and optional metadata.
+- **`result.status`**: Lifecycle state of the task (`IN_PROGRESS`, `COMPLETED`, or `FAILED`).
+- **`result.artifacts`**: Structured data or tool execution metadata produced during execution.
+
 ---
 
 ### Add-on B: Multi-Agent Architecture Patterns
 
-By placing a **Root Agent** (`travel_concierge`) in front of the two specialized agents, our architecture achieves:
-- **Separation of Concerns**: `weather_agent` only knows meteorology; `itinerary_planner` only knows attire and packing logic.
-- **Flexibility**: You can replace or upgrade the remote `weather_agent` on Cloud Run at any time without altering the clothing recommendation logic.
-- **Unified User Experience**: The end-user interacts with a single coherent assistant rather than manually switching between disparate tools.
+Google ADK supports multiple orchestration patterns depending on system requirements:
+
+| Pattern | ADK Implementation | Best Used For |
+| :--- | :--- | :--- |
+| **Sequential Pipeline** | `SequentialAgent(sub_agents=[...])` | Structured, deterministic workflows where task output from Agent A is a required prerequisite for Agent B (e.g. data lookup $\rightarrow$ recommendation). |
+| **Conversational Orchestrator** | `Agent(sub_agents=[...])` | Open-ended conversations where a router LLM dynamically decides which sub-agent to delegate to based on user intent. |
+| **Parallel Fan-Out** | `ParallelAgent(sub_agents=[...])` | Independent tasks that can execute concurrently across multiple specialist agents (e.g. searching flights and hotels simultaneously). |
+
+In this codelab, the **Sequential Pipeline** pattern provides predictable execution guarantees: weather data is always gathered first, ensuring the styling specialist has complete context before formulating recommendations.
+
+---
+
+### Add-on C: Securing A2A Communication in Production
+
+In this introductory codelab, the Cloud Run service was deployed with `--allow-unauthenticated` for simplicity. In enterprise environments, A2A communication should be secured using Google Cloud Identity and Access Management (IAM):
+
+1. **Enforce Authentication on Cloud Run**:
+   Deploy the service with `--no-allow-unauthenticated`.
+2. **Obtain an OIDC Identity Token**:
+   The caller generates an OpenID Connect (OIDC) identity token targeted at the Cloud Run service URL:
+   ```bash
+   gcloud auth print-identity-token --audiences="$WEATHER_AGENT_URL"
+   ```
+3. **Pass the Authorization Header**:
+   Inbound requests to the A2A endpoint must include:
+   ```text
+   Authorization: Bearer <ID_TOKEN>
+   ```
+4. **ADK Transport Interceptors**:
+   ADK's `RemoteA2aAgent` supports custom HTTP transport interceptors that automatically attach Google Cloud IAM identity tokens to outbound JSON-RPC calls, enabling zero-trust agent communication.
 
 ---
 
 ## 9. Clean Up
 
-To avoid incurring ongoing charges on Google Cloud, delete the resources created during this codelab:
+To avoid incurring ongoing charges on your Google Cloud project, clean up the resources created during this codelab:
 
 ```bash
 # Delete the Cloud Run service
@@ -883,16 +962,17 @@ gcloud artifacts repositories delete cloud-run-source-deploy \
 
 ## 10. Summary & Congratulations
 
-🎉 **Congratulations!** You have successfully built, deployed, and connected remote AI agents using the Google Agent Development Kit (ADK) and the Agent2Agent (A2A) protocol.
+🎉 **Congratulations!** You have successfully designed, deployed, and connected distributed AI agents using the Google Agent Development Kit (ADK) and the Agent2Agent (A2A) protocol.
 
 ### Key Milestones Achieved:
-1. **Agent Tooling**: Created a tool-enabled domain agent (`weather_agent`) powered by **Gemini 3.8 Flash** on **Vertex AI** with Python functions and docstring declarations.
-2. **A2A Server Exposure**: Wrapped the agent with `to_a2a()` and deployed it as a public, unauthenticated microservice on **Google Cloud Run**.
-3. **Agent Card Discovery**: Authored an explicit Agent Card (`agent.json`) describing capabilities and skills served at `/.well-known/agent-card.json`.
-4. **Root Agent Orchestration**: Created a Root Agent (`travel_concierge`) that coordinates between the remote A2A sub-agent and the local specialist attire agent (`itinerary_planner`).
-5. **Interactive Chat**: Tested multi-agent reasoning and umbrella alerts directly within the **ADK Web UI**.
+1. **Tool-Enabled Domain Agent**: Built a specialist agent (`weather_agent`) powered by **Gemini 3.8 Flash** on **Vertex AI** utilizing native **Google Search Grounding** (`google_search`).
+2. **A2A Server Conversion**: Exposed the agent as an A2A service using `to_a2a()` and authored a standardized RFC 8615 Agent Card (`agent.json`).
+3. **Cloud Run Deployment**: Containerized the service with Docker and deployed it serverlessly to **Google Cloud Run**, configuring the deterministic Cloud Run URL format (`https://[service-name]-[project-number].[region-code].run.app`) to satisfy A2A origin constraints seamlessly.
+4. **Remote Proxy Integration**: Connected the remote service to a local ADK runtime using the `RemoteA2aAgent` client proxy.
+5. **Sequential Orchestration**: Built a Root Agent (`travel_concierge`) using `SequentialAgent` to coordinate weather lookups and conditional attire planning deterministically.
+6. **Execution Tracing**: Tested multi-agent reasoning, context propagation, and conditional umbrella reminders in the **ADK Web UI**.
 
-### What's Next?
-- Read the official [Google ADK Documentation](https://adk.dev).
-- Explore the [Agent2Agent (A2A) Protocol Standard](https://a2a-protocol.org).
-- Add asynchronous human-in-the-loop approvals or memory persistence using ADK Session Stores.
+### Next Steps:
+- Learn more about the [Google Agent Development Kit (ADK)](https://adk.dev).
+- Review the official [Agent2Agent (A2A) Protocol Standard](https://a2a-protocol.org).
+- Explore state management, persistent memory, and human-in-the-loop workflows in Google ADK.

@@ -53,7 +53,7 @@ def _load_agent_card():
         with open(agent_card_path, "r") as f:
             card_data = json.load(f)
         # Ensure mandatory A2A schema fields are present
-        card_data["url"] = os.environ.get("WEATHER_AGENT_URL") or os.environ.get("SERVICE_URL") or f"http://localhost:{port}"
+        card_data["url"] = os.environ.get("WEATHER_AGENT_URL") or card_data.get("url") or f"http://localhost:{port}"
         card_data.setdefault("defaultInputModes", ["text/plain"])
         card_data.setdefault("defaultOutputModes", ["text/plain", "application/json"])
         card_data.setdefault("capabilities", {"streaming": True})
@@ -73,34 +73,6 @@ app = to_a2a(
     agent_card=_load_agent_card(),
     port=port,
 )
-
-
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
-
-
-class DynamicAgentCardOriginMiddleware(BaseHTTPMiddleware):
-    """Dynamically aligns the Agent Card RPC URL with the request's actual origin (e.g. Cloud Run HTTPS host)."""
-    async def dispatch(self, request, call_next):
-        response = await call_next(request)
-        if request.url.path in ("/.well-known/agent-card.json", "/.well-known/agent.json") and response.status_code == 200:
-            proto = request.headers.get("x-forwarded-proto", request.url.scheme)
-            host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.netloc))
-            origin = f"{proto}://{host}"
-            try:
-                body = [chunk async for chunk in response.body_iterator]
-                card_json = json.loads(b"".join(body))
-                card_json["url"] = origin
-                new_content = json.dumps(card_json).encode("utf-8")
-                headers = dict(response.headers)
-                headers["content-length"] = str(len(new_content))
-                return Response(content=new_content, status_code=200, headers=headers, media_type="application/json")
-            except Exception:
-                pass
-        return response
-
-
-app.add_middleware(DynamicAgentCardOriginMiddleware)
 
 if __name__ == "__main__":
     import uvicorn

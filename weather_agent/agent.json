@@ -2,7 +2,7 @@
   "name": "weather_agent",
   "description": "Specialist agent that provides current weather forecasts, temperature, and precipitation conditions for any city.",
   "version": "1.0.0",
-  "url": "http://localhost:8080",
+  "url": "https://weather-agent-727750094215.us-central1.run.app",
   "defaultInputModes": [
     "text/plain"
   ],
