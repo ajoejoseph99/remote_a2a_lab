@@ -16,11 +16,12 @@ REGION=$(gcloud config get-value compute/region 2>/dev/null || echo "us-central1
 REGION=${REGION:-us-central1}
 SERVICE_NAME="weather-agent"
 
-if [ -n "$PROJECT_NUMBER" ] && [ -n "$REGION" ]; then
-  WEATHER_AGENT_URL="https://${SERVICE_NAME}-${PROJECT_NUMBER}.${REGION}.run.app"
-else
-  WEATHER_AGENT_URL="http://localhost:8080"
+if [ -z "$PROJECT_NUMBER" ]; then
+  echo "❌ Error: Could not determine PROJECT_NUMBER for project $PROJECT_ID."
+  exit 1
 fi
+
+WEATHER_AGENT_URL="https://${SERVICE_NAME}-${PROJECT_NUMBER}.${REGION}.run.app"
 
 # Set Vertex AI Model Location to global (required for Gemini 3.8 Flash)
 LOCATION="global"

@@ -53,7 +53,7 @@ def _load_agent_card():
         with open(agent_card_path, "r") as f:
             card_data = json.load(f)
         # Ensure mandatory A2A schema fields are present
-        card_data["url"] = os.environ.get("WEATHER_AGENT_URL") or card_data.get("url") or f"http://localhost:{port}"
+        card_data["url"] = os.environ.get("WEATHER_AGENT_URL") or card_data.get("url")
         card_data.setdefault("defaultInputModes", ["text/plain"])
         card_data.setdefault("defaultOutputModes", ["text/plain", "application/json"])
         card_data.setdefault("capabilities", {"streaming": True})

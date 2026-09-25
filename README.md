@@ -60,8 +60,9 @@ gcloud run deploy weather-agent \
     --allow-unauthenticated \
     --set-env-vars GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT="$PROJECT_ID",GOOGLE_CLOUD_LOCATION=global
 
-# Automatically write the deployed Cloud Run URL into .env (no copy-pasting required)
-echo "WEATHER_AGENT_URL=$(gcloud run services describe weather-agent --region "$REGION" --format='value(status.url)')" >> .env
+# Verify the deployed service serves its Agent Card over public HTTPS
+source .env
+curl -s "$WEATHER_AGENT_URL/.well-known/agent-card.json" | jq .
 ```
 
 ### 3. Start ADK Web UI
