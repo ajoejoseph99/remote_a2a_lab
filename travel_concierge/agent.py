@@ -38,8 +38,13 @@ os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
 
 
 def resolve_weather_agent_url() -> str:
-    """Resolves Weather Agent A2A endpoint: live gcloud describe -> env var -> localhost."""
-    # 1. Prefer live Cloud Run service URL directly from gcloud if deployed
+    """Resolves Weather Agent A2A endpoint: env var (deterministic URL) -> live gcloud describe -> localhost."""
+    # 1. Prefer WEATHER_AGENT_URL from environment (.env)
+    url = os.environ.get("WEATHER_AGENT_URL")
+    if url and url.startswith("http"):
+        return url.rstrip("/")
+
+    # 2. Fall back to live Cloud Run service URL directly from gcloud if deployed
     try:
         region = os.environ.get("CLOUD_RUN_REGION")
         if not region:
@@ -60,11 +65,6 @@ def resolve_weather_agent_url() -> str:
             return discovered.rstrip("/")
     except Exception:
         pass
-
-    # 2. Fall back to WEATHER_AGENT_URL from environment
-    url = os.environ.get("WEATHER_AGENT_URL")
-    if url and url.startswith("http"):
-        return url.rstrip("/")
 
     # 3. Default to local development server
     return "http://localhost:8080"

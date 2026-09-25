@@ -737,8 +737,13 @@ os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
 
 
 def resolve_weather_agent_url() -> str:
-    """Resolves Weather Agent A2A endpoint: live gcloud describe -> env var -> localhost."""
-    # 1. Prefer live Cloud Run service URL directly from gcloud if deployed
+    """Resolves Weather Agent A2A endpoint: env var (deterministic URL) -> live gcloud describe -> localhost."""
+    # 1. Prefer WEATHER_AGENT_URL from environment (.env)
+    url = os.environ.get("WEATHER_AGENT_URL")
+    if url and url.startswith("http"):
+        return url.rstrip("/")
+
+    # 2. Fall back to live Cloud Run service URL directly from gcloud if deployed
     # Automatically query gcloud from the terminal environment if deployed
     try:
         region = os.environ.get("CLOUD_RUN_REGION")
@@ -759,11 +764,6 @@ def resolve_weather_agent_url() -> str:
             return discovered.rstrip("/")
     except Exception:
         pass
-
-    # 2. Fall back to WEATHER_AGENT_URL from environment
-    url = os.environ.get("WEATHER_AGENT_URL")
-    if url and url.startswith("http"):
-        return url.rstrip("/")
 
     # 3. Default to local development server
     return "http://localhost:8080"
@@ -793,8 +793,8 @@ root_agent = SequentialAgent(
 
 #### 1. Endpoint Resolution Strategy (`resolve_weather_agent_url`)
 The helper function dynamically determines the Weather Agent's network location using a fallback hierarchy:
-1. **Live Cloud Run Inspection**: Queries `gcloud run services describe` to retrieve the current HTTPS URL if deployed.
-2. **Environment Variable**: Reads `WEATHER_AGENT_URL` from `.env` or system environment.
+1. **Deterministic Environment Variable**: First reads `WEATHER_AGENT_URL` from `.env`. This ensures the caller fetches from the exact deterministic URL (`https://weather-agent-${PROJECT_NUMBER}.${REGION}.run.app`) advertised in `agent.json`, satisfying strict A2A same-origin validation.
+2. **Live Cloud Run Inspection**: Falls back to `gcloud run services describe` if `WEATHER_AGENT_URL` is absent.
 3. **Localhost Fallback**: Defaults to `http://localhost:8080` for local offline development.
 
 #### 2. The `RemoteA2aAgent` Client Proxy
