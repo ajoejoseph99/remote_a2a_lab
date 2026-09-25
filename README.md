@@ -5,6 +5,10 @@ This repository contains the complete code implementation and step-by-step tutor
 ## 📖 Codelab Guide
 The full, step-by-step walkthrough is available in [codelab.md](file:///Users/ajoejoseph/Desktop/a2a%20lab/codelab.md).
 
+> [!NOTE]
+> **Starter Codelab Branch (`codelab`)**: This branch is the interactive starter template for following the [codelab guide](file:///Users/ajoejoseph/Desktop/a2a%20lab/codelab.md). You will populate the empty agent files and execute setup commands in Cloud Shell as you progress through each step.
+> For the complete pre-built reference solution, see the [`main`](https://github.com/ajoejoseph99/remote_a2a_lab/tree/main) branch.
+
 ---
 
 ## 🏗️ Architecture
